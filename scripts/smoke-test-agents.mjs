@@ -58,6 +58,7 @@ function parseFrontmatter(src) {
       } else {
         out[key] = collected.join("\n").trim();
       }
+      continue; // i déjà avancé par le while interne
     } else {
       const v = rest.trim();
       if (v.startsWith("[") && v.endsWith("]")) {

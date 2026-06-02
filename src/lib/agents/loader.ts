@@ -23,7 +23,10 @@ export interface AgentFrontmatter {
   tools?: string[];
   reads?: string[];
   writes?: string[];
+  /** Skill unique (rétrocompat). Utilise `skills` pour plusieurs. */
   skill?: string | null;
+  /** Liste de skills mobilisés par l'agent (mergée avec `skill` si présent). */
+  skills?: string[];
   gate?: boolean;
   escalation_to?: string | null;
   description?: string;
@@ -134,6 +137,9 @@ function parseYamlSubset(text: string): Record<string, unknown> {
       } else {
         out[key] = collected.join("\n").trim();
       }
+      // Le while interne a déjà avancé `i` jusqu'à la prochaine ligne
+      // non-indentée : on NE FAIT PAS i++ ici sinon on saute cette clé.
+      continue;
     } else {
       out[key] = parseInlineValue(rest);
     }
@@ -204,6 +210,9 @@ export async function loadAgent(key: AgentKey): Promise<AgentDefinition> {
         : frontmatter.skill === null
           ? null
           : undefined,
+    skills: Array.isArray(frontmatter.skills)
+      ? (frontmatter.skills as string[])
+      : [],
     gate: frontmatter.gate === true,
     escalation_to:
       typeof frontmatter.escalation_to === "string"

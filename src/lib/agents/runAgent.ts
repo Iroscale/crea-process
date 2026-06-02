@@ -31,6 +31,7 @@ import {
   loadAgentMemory,
   formatAgentIdentityExtras,
 } from "./knowledge";
+import { loadSkillsBundle } from "./skills";
 
 export interface RunAgentArgs {
   supabase: SupabaseClient;
@@ -165,13 +166,24 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
       loadKnowledgeForAgent(supabase, { userId, agentKey }),
       docsPromise,
     ]);
+  // Skills : merge `skill` (singulier rétrocompat) et `skills` (liste)
+  const skillNames: string[] = [
+    ...(agent.frontmatter.skill ? [agent.frontmatter.skill] : []),
+    ...(agent.frontmatter.skills ?? []),
+  ];
+  const skillsMd = await loadSkillsBundle(skillNames);
   const fullMemory = [memoryMarkdown, documentsMd, extraMemoryMarkdown ?? ""]
     .filter((s) => s.trim().length > 0)
     .join("\n\n---\n\n");
-  const identityExtras = formatAgentIdentityExtras({
-    agentMemory: agentMem,
-    knowledgeMarkdown: knowledgeMd,
-  });
+  const identityExtras = [
+    skillsMd,
+    formatAgentIdentityExtras({
+      agentMemory: agentMem,
+      knowledgeMarkdown: knowledgeMd,
+    }),
+  ]
+    .filter((s) => s.trim().length > 0)
+    .join("\n\n---\n\n");
   const model = agent.frontmatter.model || resolveModel(agentKey);
   const systemBlocks = buildSystemBlocks({
     preamble,
@@ -197,6 +209,7 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
         identity_extras_chars: identityExtras.length,
         agent_memory_version: agentMem?.version ?? null,
         knowledge_used: knowledgeMd.length > 0,
+        skills_loaded: skillNames,
       },
     })
     .select("id")
