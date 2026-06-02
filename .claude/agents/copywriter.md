@@ -10,6 +10,7 @@ reads:
 writes: []
 skills:
   - sales-copy-blueprint
+  - landing-page-designer
 gate: false
 escalation_to: ~
 description: |

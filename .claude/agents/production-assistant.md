@@ -6,7 +6,8 @@ reads:
   - memory/brand-voice.md
   - memory/client-profile.md
 writes: []
-skill: ~
+skills:
+  - production-video
 gate: true
 escalation_to: copywriter
 description: |
