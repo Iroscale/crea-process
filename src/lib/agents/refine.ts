@@ -23,7 +23,8 @@
  */
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getAnthropic, CLAUDE_MODEL } from "../anthropic";
+import { CLAUDE_MODEL } from "../anthropic";
+import { chat } from "../llm";
 import type { AgentKey } from "./model-routing";
 import { loadAgent } from "./loader";
 import {
@@ -200,8 +201,8 @@ export async function generateRefineProposal(args: {
     };
   }
 
-  // 3. Appel Claude
-  const client = getAnthropic();
+  // 3. Appel meta via chat() — par défaut Claude Sonnet, mais ça passe par la
+  // couche d'abstraction donc bascule facile vers GPT/Gemini plus tard.
   const userMsg = buildRefineUserMessage({
     agentKey,
     agentBody: agentDef.body,
@@ -212,19 +213,15 @@ export async function generateRefineProposal(args: {
 
   let raw = "";
   try {
-    const resp = await client.messages.create({
+    const resp = await chat({
       model: CLAUDE_MODEL,
-      max_tokens: 4000,
-      system: REFINE_SYSTEM,
-      messages: [{ role: "user", content: userMsg }],
+      systemBlocks: [{ text: REFINE_SYSTEM, cacheable: true }],
+      userMessage: userMsg,
+      maxTokens: 4000,
     });
-    raw = resp.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("\n\n")
-      .trim();
+    raw = resp.text;
   } catch (e) {
-    return { error: `Distillation Claude a échoué : ${(e as Error).message}` };
+    return { error: `Distillation a échoué : ${(e as Error).message}` };
   }
 
   // 4. Parse la sortie selon le gabarit

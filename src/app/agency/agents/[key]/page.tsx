@@ -3,7 +3,6 @@ import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
   AGENT_KEYS,
-  MODEL_BY_AGENT,
   loadAgent,
   loadSkill,
   listKnowledge,
@@ -13,11 +12,22 @@ import {
   type AgentKey,
 } from "@/lib/agents";
 import {
+  MODEL_CATALOG,
+  PROVIDER_LABELS,
+  TIER_LABELS,
+  resolveAgentModel,
+  isProviderReady,
+  getModelInfo,
+  type LLMProvider,
+} from "@/lib/llm";
+import {
   addKnowledgeAction,
   deleteKnowledgeAction,
   toggleKnowledgeAction,
   recordFeedbackAction,
   startRefineAction,
+  setAgentModelAction,
+  clearAgentModelAction,
 } from "./actions";
 import SubmitButton from "../../../projects/[id]/briefs/[bid]/submit-button";
 
@@ -36,7 +46,12 @@ export default async function AgentDetailPage({
   searchParams,
 }: {
   params: Promise<{ key: string }>;
-  searchParams: Promise<{ error?: string; refined?: string; rejected?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    refined?: string;
+    rejected?: string;
+    model_changed?: string;
+  }>;
 }) {
   const { key } = await params;
   const sp = await searchParams;
@@ -79,6 +94,31 @@ export default async function AgentDetailPage({
       return { name, body, available: body !== null };
     })
   );
+
+  // Résolution du modèle effectif (override DB → frontmatter → défaut)
+  const { model: effectiveModel, source: modelSource } = await resolveAgentModel(
+    supabase,
+    {
+      userId: user.id,
+      agentKey,
+      frontmatterModel: agent.frontmatter.model,
+    }
+  );
+  const effectiveModelInfo = getModelInfo(effectiveModel);
+  // Liste des modèles dispo groupés par provider (pour le select)
+  const modelsByProvider = MODEL_CATALOG.reduce(
+    (acc, m) => {
+      if (!acc[m.provider]) acc[m.provider] = [];
+      acc[m.provider].push(m);
+      return acc;
+    },
+    {} as Record<LLMProvider, typeof MODEL_CATALOG>
+  );
+  const providerReady: Record<LLMProvider, boolean> = {
+    anthropic: isProviderReady("anthropic"),
+    openai: isProviderReady("openai"),
+    google: isProviderReady("google"),
+  };
 
   // Signed URLs pour les knowledge avec fichier attaché
   const knowledgeSignedUrls = new Map<string, string>();
@@ -142,7 +182,15 @@ export default async function AgentDetailPage({
           </div>
           <h1 className="mt-1 text-3xl font-semibold">{agent.frontmatter.name}</h1>
           <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
-            modèle <span className="font-mono">{MODEL_BY_AGENT[agentKey]}</span>
+            modèle{" "}
+            <span className="font-mono">
+              {effectiveModelInfo?.label ?? effectiveModel}
+            </span>
+            {modelSource === "override" && (
+              <span className="ml-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300">
+                override
+              </span>
+            )}
             {agent.frontmatter.skill && (
               <>
                 {" "}
@@ -170,6 +218,11 @@ export default async function AgentDetailPage({
       {sp.error && <Banner kind="error">{decodeURIComponent(sp.error)}</Banner>}
       {sp.refined && <Banner kind="success">{decodeURIComponent(sp.refined)}</Banner>}
       {sp.rejected && <Banner kind="info">{decodeURIComponent(sp.rejected)}</Banner>}
+      {sp.model_changed && (
+        <Banner kind="success">
+          🤖 Modèle mis à jour : {decodeURIComponent(sp.model_changed)}
+        </Banner>
+      )}
 
       {/* ── Skills mobilisés ────────────────────────────────────────────── */}
       <section className="mt-10">
@@ -249,6 +302,118 @@ export default async function AgentDetailPage({
             </div>
           ))}
         </div>
+      </section>
+
+      {/* ── Modèle IA ───────────────────────────────────────────────────── */}
+      <section className="mt-10">
+        <h2 className="text-lg font-semibold">🤖 Modèle IA</h2>
+        <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+          Le modèle qui exécute cet agent. Surcharge utilisateur en DB —
+          revient au défaut du frontmatter si tu réinitialises.
+        </p>
+
+        {/* Current model card */}
+        <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="text-base font-semibold">
+                  {effectiveModelInfo?.label ?? effectiveModel}
+                </span>
+                {effectiveModelInfo && (
+                  <>
+                    <span className="rounded-full bg-[var(--color-primary)]/15 px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-primary)]">
+                      {PROVIDER_LABELS[effectiveModelInfo.provider]}
+                    </span>
+                    <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px]">
+                      {TIER_LABELS[effectiveModelInfo.tier]}
+                    </span>
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                        modelSource === "override"
+                          ? "bg-amber-500/15 text-amber-300"
+                          : modelSource === "frontmatter"
+                            ? "bg-sky-500/15 text-sky-300"
+                            : "bg-zinc-500/15 text-zinc-400"
+                      }`}
+                      title="Source du choix : override DB / frontmatter agent / défaut routing"
+                    >
+                      {modelSource === "override"
+                        ? "override"
+                        : modelSource === "frontmatter"
+                          ? "frontmatter"
+                          : "défaut"}
+                    </span>
+                  </>
+                )}
+              </div>
+              {effectiveModelInfo && (
+                <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+                  {effectiveModelInfo.description}
+                </p>
+              )}
+              {effectiveModelInfo && (
+                <p className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
+                  contexte {(effectiveModelInfo.contextWindow / 1000).toFixed(0)}
+                  k tokens · ${effectiveModelInfo.pricing.input}/1M in · $
+                  {effectiveModelInfo.pricing.output}/1M out
+                </p>
+              )}
+            </div>
+            {modelSource === "override" && (
+              <form action={clearAgentModelAction.bind(null, agentKey)}>
+                <button className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs hover:bg-[var(--color-accent)]">
+                  ↺ Revenir au défaut
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+
+        {/* Switch model form */}
+        <details className="mt-4 rounded-xl border border-dashed border-[var(--color-border)] p-4">
+          <summary className="cursor-pointer text-sm font-medium">
+            🔁 Changer de modèle
+          </summary>
+          <form
+            action={setAgentModelAction.bind(null, agentKey)}
+            className="mt-4 flex flex-col gap-3"
+          >
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                Modèle à utiliser
+              </span>
+              <select
+                name="model"
+                defaultValue={effectiveModel}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+              >
+                {(Object.keys(modelsByProvider) as LLMProvider[]).map((p) => (
+                  <optgroup key={p} label={`${PROVIDER_LABELS[p]}${providerReady[p] ? "" : "  (branchement requis)"}`}>
+                    {modelsByProvider[p].map((m) => (
+                      <option key={m.id} value={m.id} disabled={!providerReady[p]}>
+                        {TIER_LABELS[m.tier]} · {m.label} · $
+                        {m.pricing.input}/1M in · $
+                        {m.pricing.output}/1M out
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <p className="text-[10px] text-[var(--color-muted-foreground)]">
+              Les providers grisés nécessitent l&apos;installation du SDK et la
+              clé API dans <span className="font-mono">.env.local</span> +
+              Vercel. Anthropic est actif. OpenAI et Google sont déclarés mais
+              les adaptateurs renvoient une erreur claire tant que pas branchés.
+            </p>
+            <div className="flex justify-end">
+              <SubmitButton pendingLabel="Sauvegarde…">
+                💾 Définir comme modèle de cet agent
+              </SubmitButton>
+            </div>
+          </form>
+        </details>
       </section>
 
       {/* ── Mémoire long terme ─────────────────────────────────────────── */}

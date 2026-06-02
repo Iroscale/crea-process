@@ -16,6 +16,10 @@ import {
   type Rating,
   type RefineProposal,
 } from "@/lib/agents";
+import {
+  setAgentModelOverride,
+  clearAgentModelOverride,
+} from "@/lib/llm";
 
 async function loadUserOr401() {
   const supabase = await createClient();
@@ -236,6 +240,47 @@ export async function rejectRefineAction(key: string, formData: FormData) {
   revalidatePath(`/agency/agents/${agentKey}`);
   redirect(
     `/agency/agents/${agentKey}?rejected=${encodeURIComponent("Proposition rejetée")}`
+  );
+}
+
+// ── MODÈLE LLM ────────────────────────────────────────────────────────────
+export async function setAgentModelAction(
+  key: string,
+  formData: FormData
+): Promise<void> {
+  const agentKey = assertAgentKey(key);
+  const { supabase, userId } = await loadUserOr401();
+  const model = String(formData.get("model") ?? "").trim();
+  if (!model) {
+    redirect(
+      `/agency/agents/${agentKey}?error=${encodeURIComponent("Modèle requis")}`
+    );
+  }
+  const res = await setAgentModelOverride(supabase, {
+    userId,
+    agentKey,
+    model,
+  });
+  if (res.error) {
+    redirect(
+      `/agency/agents/${agentKey}?error=${encodeURIComponent(res.error)}`
+    );
+  }
+  revalidatePath(`/agency/agents/${agentKey}`);
+  revalidatePath(`/agency/agents`);
+  redirect(
+    `/agency/agents/${agentKey}?model_changed=${encodeURIComponent(model)}`
+  );
+}
+
+export async function clearAgentModelAction(key: string): Promise<void> {
+  const agentKey = assertAgentKey(key);
+  const { supabase, userId } = await loadUserOr401();
+  await clearAgentModelOverride(supabase, { userId, agentKey });
+  revalidatePath(`/agency/agents/${agentKey}`);
+  revalidatePath(`/agency/agents`);
+  redirect(
+    `/agency/agents/${agentKey}?model_changed=${encodeURIComponent("réinitialisé au défaut")}`
   );
 }
 

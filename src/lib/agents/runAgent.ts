@@ -17,14 +17,8 @@
  */
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getAnthropic } from "../anthropic";
-import {
-  type AgentKey,
-  resolveModel,
-  estimateCostUsd,
-} from "./model-routing";
+import { type AgentKey } from "./model-routing";
 import { loadAgent, loadCommonPreamble } from "./loader";
-import { buildSystemBlocks } from "./prompt-cache";
 import { MEMORY_SLUGS, concatMemory, type MemorySlug } from "./memory-schema";
 import {
   loadKnowledgeForAgent,
@@ -32,6 +26,8 @@ import {
   formatAgentIdentityExtras,
 } from "./knowledge";
 import { loadSkillsBundle } from "./skills";
+import { chat, estimateCost, resolveAgentModel } from "../llm";
+import type { SystemBlock, ChatBlock } from "../llm";
 
 export interface RunAgentArgs {
   supabase: SupabaseClient;
@@ -96,15 +92,6 @@ export interface AgentRunResult {
   costUsd: number;
   model: string;
 }
-
-interface AnthropicUsage {
-  input_tokens?: number;
-  output_tokens?: number;
-  cache_read_input_tokens?: number;
-  cache_creation_input_tokens?: number;
-}
-
-type AnthropicBlock = { type: string; text?: string; [k: string]: unknown };
 
 /**
  * Charge les 7 fichiers mémoire d'un projet depuis client_memory.
@@ -184,13 +171,33 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
   ]
     .filter((s) => s.trim().length > 0)
     .join("\n\n---\n\n");
-  const model = agent.frontmatter.model || resolveModel(agentKey);
-  const systemBlocks = buildSystemBlocks({
-    preamble,
-    agentBody: agent.body,
-    agentIdentityExtras: identityExtras,
-    memoryMarkdown: fullMemory,
+  // Résolution du modèle effectif : override DB → frontmatter → default
+  const { model, source: modelSource } = await resolveAgentModel(supabase, {
+    userId,
+    agentKey,
+    frontmatterModel: agent.frontmatter.model,
   });
+
+  // Blocs system unifiés (préambule / identité (body + memory + knowledge + skills)
+  // / mémoire client). Marqués cacheable=true → l'adaptateur ajoute le marqueur
+  // si le provider le supporte (Anthropic), sinon ignore proprement.
+  const systemBlocks: SystemBlock[] = [];
+  if (preamble.trim()) {
+    systemBlocks.push({ text: preamble, cacheable: true });
+  }
+  const identityParts: string[] = [];
+  if (agent.body.trim()) identityParts.push(agent.body.trim());
+  if (identityExtras.trim()) identityParts.push("\n\n---\n\n" + identityExtras.trim());
+  const identityText = identityParts.join("\n");
+  if (identityText.trim()) {
+    systemBlocks.push({ text: identityText, cacheable: true });
+  }
+  if (fullMemory.trim()) {
+    systemBlocks.push({
+      text: `# Mémoire client (source de vérité)\n\n${fullMemory}`,
+      cacheable: true,
+    });
+  }
 
   // ─── Crée la ligne agent_runs en status 'running' ────────────────────────
   const { data: runRow, error: runErr } = await supabase
@@ -210,6 +217,7 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
         agent_memory_version: agentMem?.version ?? null,
         knowledge_used: knowledgeMd.length > 0,
         skills_loaded: skillNames,
+        model_source: modelSource,
       },
     })
     .select("id")
@@ -239,8 +247,7 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
       );
   }
 
-  // ─── Appel Anthropic ─────────────────────────────────────────────────────
-  const client = getAnthropic();
+  // ─── Appel LLM via la couche d'abstraction multi-provider ──────────────
   let text = "";
   let usage: AgentRunResult["usage"] = {
     prompt_tokens: 0,
@@ -248,31 +255,18 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
     cache_read_tokens: 0,
     cache_creation_tokens: 0,
   };
-  let outputBlocks: AnthropicBlock[] = [];
+  let outputBlocks: ChatBlock[] = [];
   try {
-    const params = {
+    const resp = await chat({
       model,
-      max_tokens: maxTokens,
-      system: systemBlocks,
-      messages: [{ role: "user" as const, content: task }],
-      ...(tools && tools.length > 0 ? { tools } : {}),
-    };
-    const resp = await client.messages.create(
-      params as unknown as Parameters<typeof client.messages.create>[0]
-    );
-    outputBlocks = (resp as unknown as { content: AnthropicBlock[] }).content;
-    text = outputBlocks
-      .filter((b) => b.type === "text" && typeof b.text === "string")
-      .map((b) => b.text as string)
-      .join("\n\n")
-      .trim();
-    const u = (resp as unknown as { usage?: AnthropicUsage }).usage ?? {};
-    usage = {
-      prompt_tokens: u.input_tokens ?? 0,
-      completion_tokens: u.output_tokens ?? 0,
-      cache_read_tokens: u.cache_read_input_tokens ?? 0,
-      cache_creation_tokens: u.cache_creation_input_tokens ?? 0,
-    };
+      systemBlocks,
+      userMessage: task,
+      maxTokens,
+      tools,
+    });
+    text = resp.text;
+    outputBlocks = resp.blocks;
+    usage = resp.usage;
   } catch (err) {
     const msg = (err as Error).message;
     await supabase
@@ -301,7 +295,7 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
     };
   }
 
-  const costUsd = estimateCostUsd(model, usage);
+  const costUsd = estimateCost(model, usage);
 
   // ─── Persiste le deliverable si demandé ──────────────────────────────────
   let deliverableId: string | undefined;
