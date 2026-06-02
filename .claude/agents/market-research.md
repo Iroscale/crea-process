@@ -8,7 +8,8 @@ reads:
   - onboarding_data
 writes:
   - memory/icp.md
-skill: icp-creative-strategy
+skills:
+  - market-intelligence
 gate: true
 escalation_to: ~
 description: |
