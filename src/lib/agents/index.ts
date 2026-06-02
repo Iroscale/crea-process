@@ -32,6 +32,7 @@ export {
   loadKnowledgeForAgent,
   loadAgentMemory,
   formatAgentIdentityExtras,
+  createKnowledgeFileSignedUrl,
 } from "./knowledge";
 export type { KnowledgeKind, AgentKnowledgeRow } from "./knowledge";
 export {

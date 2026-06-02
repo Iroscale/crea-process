@@ -7,6 +7,7 @@ import {
   loadAgent,
   loadSkill,
   listKnowledge,
+  createKnowledgeFileSignedUrl,
   countPendingFeedback,
   loadAgentMemory,
   type AgentKey,
@@ -78,6 +79,18 @@ export default async function AgentDetailPage({
       return { name, body, available: body !== null };
     })
   );
+
+  // Signed URLs pour les knowledge avec fichier attaché
+  const knowledgeSignedUrls = new Map<string, string>();
+  for (const k of knowledge) {
+    if (k.file_path) {
+      const url = await createKnowledgeFileSignedUrl(supabase, {
+        filePath: k.file_path,
+        expiresIn: 60 * 30,
+      });
+      if (url) knowledgeSignedUrls.set(k.id, url);
+    }
+  }
 
   const runs = runsRes.data ?? [];
   const runIds = runs.map((r) => r.id as string);
@@ -262,14 +275,15 @@ export default async function AgentDetailPage({
         </div>
       </section>
 
-      {/* ── Knowledge enrichi ──────────────────────────────────────────── */}
+      {/* ── Knowledge enrichi & Ressources ──────────────────────────────── */}
       <section className="mt-10">
         <div className="flex items-end justify-between">
           <div>
-            <h2 className="text-lg font-semibold">📚 Knowledge enrichi</h2>
+            <h2 className="text-lg font-semibold">📚 Ressources & Knowledge</h2>
             <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
-              Règles, bons exemples, anti-exemples et références injectés dans
-              le contexte de l&apos;agent à chaque appel.
+              Règles, bons exemples, anti-exemples, références — **et fichiers
+              uploadés** (PDF, DOCX, images, scripts). Tout est injecté dans le
+              contexte de l&apos;agent à chaque appel, en complément de ses skills.
             </p>
           </div>
         </div>
@@ -277,9 +291,13 @@ export default async function AgentDetailPage({
         {/* Formulaire d'ajout */}
         <details className="mt-4 rounded-xl border border-dashed border-[var(--color-border)] p-4">
           <summary className="cursor-pointer text-sm font-medium">
-            + Ajouter un knowledge
+            + Ajouter une ressource ou un knowledge
           </summary>
-          <form action={addKnowAction} className="mt-4 flex flex-col gap-3">
+          <form
+            action={addKnowAction}
+            className="mt-4 flex flex-col gap-3"
+            encType="multipart/form-data"
+          >
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1">
                 <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
@@ -287,36 +305,50 @@ export default async function AgentDetailPage({
                 </span>
                 <select
                   name="kind"
-                  defaultValue="rule"
+                  defaultValue="reference"
                   className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
                 >
                   <option value="rule">📐 Règle métier</option>
                   <option value="good_example">✅ Bon exemple</option>
                   <option value="anti_example">❌ Anti-exemple</option>
-                  <option value="reference">📚 Référence</option>
+                  <option value="reference">📚 Référence / ressource</option>
                 </select>
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
-                  Titre
+                  Titre *
                 </span>
                 <input
                   name="title"
                   required
+                  placeholder="Ex : Anciennes pubs gagnantes Q1 2026"
                   className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
                 />
               </label>
             </div>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
-                Contenu (markdown)
+                📎 Fichier (PDF · DOCX · TXT · MD · CSV · image · …) — optionnel
+              </span>
+              <input
+                type="file"
+                name="file"
+                className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3 text-sm file:mr-3 file:rounded file:border-0 file:bg-[var(--color-primary)] file:px-3 file:py-1 file:text-xs file:font-medium file:text-[var(--color-primary-foreground)]"
+              />
+              <span className="text-[10px] text-[var(--color-muted-foreground)]">
+                Le texte est extrait automatiquement (PDF/DOCX/TXT) et lu par
+                l&apos;agent. Images conservées sans extraction.
+              </span>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                Contenu (markdown) — optionnel si fichier fourni
               </span>
               <textarea
                 name="content_md"
-                rows={6}
-                required
+                rows={4}
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
-                placeholder="Ex (règle) : « Toujours ouvrir un script founder par un chiffre concret ou une question fermée. »"
+                placeholder="Ex (règle) : « Toujours ouvrir un script founder par un chiffre concret. » Ou commentaire libre qui accompagne le fichier."
               />
             </label>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -389,7 +421,38 @@ export default async function AgentDetailPage({
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="text-sm font-medium">{k.title}</div>
+                            <div className="flex flex-wrap items-baseline gap-1.5">
+                              <div className="text-sm font-medium">
+                                {k.title}
+                              </div>
+                              {k.file_path && (
+                                <span
+                                  className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                                    k.parse_status === "done"
+                                      ? "bg-emerald-500/15 text-emerald-300"
+                                      : k.parse_status === "skipped"
+                                        ? "bg-zinc-500/15 text-zinc-400"
+                                        : k.parse_status === "failed"
+                                          ? "bg-red-500/15 text-red-300"
+                                          : "bg-sky-500/15 text-sky-300"
+                                  }`}
+                                  title={`Fichier ${k.file_name ?? ""}${
+                                    k.size_bytes
+                                      ? ` · ${(k.size_bytes / 1024).toFixed(1)} ko`
+                                      : ""
+                                  }`}
+                                >
+                                  📎{" "}
+                                  {k.parse_status === "done"
+                                    ? "fichier parsé"
+                                    : k.parse_status === "skipped"
+                                      ? "fichier joint"
+                                      : k.parse_status === "failed"
+                                        ? "parse échoué"
+                                        : "fichier"}
+                                </span>
+                              )}
+                            </div>
                             {k.tags && k.tags.length > 0 && (
                               <div className="mt-0.5 flex flex-wrap gap-1">
                                 {k.tags.map((t, i) => (
@@ -404,6 +467,16 @@ export default async function AgentDetailPage({
                             )}
                           </div>
                           <div className="flex shrink-0 gap-1">
+                            {k.file_path && knowledgeSignedUrls.get(k.id) && (
+                              <a
+                                href={knowledgeSignedUrls.get(k.id)!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="rounded border border-[var(--color-border)] px-2 py-0.5 text-[10px] hover:bg-[var(--color-accent)]"
+                              >
+                                ⬇
+                              </a>
+                            )}
                             <form
                               action={toggleKnowledgeAction.bind(
                                 null,

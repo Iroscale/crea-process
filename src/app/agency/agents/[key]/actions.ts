@@ -46,10 +46,19 @@ export async function addKnowledgeAction(key: string, formData: FormData) {
   const tagsRaw = String(formData.get("tags") ?? "").trim();
   const sourceNote = String(formData.get("source_note") ?? "").trim();
   const weight = Number(formData.get("weight") ?? 1);
+  const fileEntry = formData.get("file");
+  const file =
+    fileEntry instanceof File && fileEntry.size > 0 ? fileEntry : undefined;
 
-  if (!title || !contentMd) {
+  if (!title) {
     redirect(
-      `/agency/agents/${agentKey}?error=${encodeURIComponent("Titre et contenu requis")}`
+      `/agency/agents/${agentKey}?error=${encodeURIComponent("Titre requis")}`
+    );
+  }
+  // contentMd OU file requis
+  if (!contentMd && !file) {
+    redirect(
+      `/agency/agents/${agentKey}?error=${encodeURIComponent("Fournis un contenu markdown ou un fichier")}`
     );
   }
 
@@ -66,6 +75,7 @@ export async function addKnowledgeAction(key: string, formData: FormData) {
     tags,
     weight,
     sourceNote: sourceNote || undefined,
+    file,
   });
   if ("error" in res) {
     redirect(
