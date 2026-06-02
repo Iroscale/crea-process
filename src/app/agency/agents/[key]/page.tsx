@@ -5,6 +5,7 @@ import {
   AGENT_KEYS,
   MODEL_BY_AGENT,
   loadAgent,
+  loadSkill,
   listKnowledge,
   countPendingFeedback,
   loadAgentMemory,
@@ -65,6 +66,18 @@ export default async function AgentDetailPage({
       .order("started_at", { ascending: false })
       .limit(10),
   ]);
+
+  // Charge le contenu des skills mobilisés pour les afficher
+  const skillNames: string[] = [
+    ...(agent.frontmatter.skill ? [agent.frontmatter.skill] : []),
+    ...(agent.frontmatter.skills ?? []),
+  ];
+  const skillsLoaded = await Promise.all(
+    skillNames.map(async (name) => {
+      const body = await loadSkill(name);
+      return { name, body, available: body !== null };
+    })
+  );
 
   const runs = runsRes.data ?? [];
   const runIds = runs.map((r) => r.id as string);
@@ -144,6 +157,86 @@ export default async function AgentDetailPage({
       {sp.error && <Banner kind="error">{decodeURIComponent(sp.error)}</Banner>}
       {sp.refined && <Banner kind="success">{decodeURIComponent(sp.refined)}</Banner>}
       {sp.rejected && <Banner kind="info">{decodeURIComponent(sp.rejected)}</Banner>}
+
+      {/* ── Skills mobilisés ────────────────────────────────────────────── */}
+      <section className="mt-10">
+        <h2 className="text-lg font-semibold">
+          🛠 Skills mobilisés
+          {skillsLoaded.length > 0 && (
+            <span className="ml-2 text-sm font-normal text-[var(--color-muted-foreground)]">
+              ({skillsLoaded.length})
+            </span>
+          )}
+        </h2>
+        <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+          Méthodes et signatures stylistiques injectées dans le contexte de
+          l&apos;agent à chaque appel. Définis dans le frontmatter de{" "}
+          <span className="font-mono">.claude/agents/{agentKey}.md</span> et
+          chargés depuis{" "}
+          <span className="font-mono">.claude/skills/&lt;name&gt;/SKILL.md</span>.
+        </p>
+        <div className="mt-4 grid gap-3">
+          {skillsLoaded.length === 0 && (
+            <p className="rounded-xl border border-dashed border-[var(--color-border)] p-4 text-center text-xs text-[var(--color-muted-foreground)]">
+              Aucun skill déclaré pour cet agent.
+            </p>
+          )}
+          {skillsLoaded.map((s) => (
+            <div
+              key={s.name}
+              className={`rounded-xl border p-4 ${
+                s.available
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : "border-red-500/30 bg-red-500/5"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                        s.available
+                          ? "bg-emerald-500/15 text-emerald-300"
+                          : "bg-red-500/15 text-red-300"
+                      }`}
+                    >
+                      {s.available ? "✓ actif" : "✗ fichier manquant"}
+                    </span>
+                    <h3 className="text-sm font-semibold font-mono">{s.name}</h3>
+                  </div>
+                  <p className="mt-1 text-[11px] text-[var(--color-muted-foreground)]">
+                    {s.available ? (
+                      <>
+                        {s.body!.length.toLocaleString("fr-FR")} caractères ·
+                        injecté dans le bloc identité (cacheable) à chaque run.
+                      </>
+                    ) : (
+                      <>
+                        Le fichier{" "}
+                        <span className="font-mono">
+                          .claude/skills/{s.name}/SKILL.md
+                        </span>{" "}
+                        est introuvable. Le skill est déclaré dans le
+                        frontmatter mais le fichier manque.
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+              {s.available && s.body && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs text-[var(--color-muted-foreground)]">
+                    Voir le contenu du skill
+                  </summary>
+                  <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-[var(--color-background)] p-3 text-[12px] leading-relaxed">
+                    {s.body}
+                  </pre>
+                </details>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* ── Mémoire long terme ─────────────────────────────────────────── */}
       <section className="mt-10">

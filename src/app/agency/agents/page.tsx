@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { AGENT_KEYS, MODEL_BY_AGENT, type AgentKey } from "@/lib/agents";
+import {
+  AGENT_KEYS,
+  MODEL_BY_AGENT,
+  loadAgent,
+  loadSkill,
+  type AgentKey,
+} from "@/lib/agents";
 
 interface AgentStats {
   key: AgentKey;
@@ -10,6 +16,8 @@ interface AgentStats {
   pendingFeedback: number;
   memoryVersion: number | null;
   runsCount: number;
+  skillsActive: string[];
+  skillsMissing: string[];
 }
 
 const AGENT_LABELS: Record<AgentKey, { title: string; tagline: string }> = {
@@ -110,14 +118,40 @@ export default async function AgentsIndexPage({
     runsByAgent.set(r.agent_key, (runsByAgent.get(r.agent_key) ?? 0) + 1);
   }
 
-  const stats: AgentStats[] = AGENT_KEYS.map((k) => ({
-    key: k,
-    model: MODEL_BY_AGENT[k],
-    knowledgeCount: knowledgeByAgent.get(k) ?? 0,
-    pendingFeedback: feedbackByAgent.get(k) ?? 0,
-    memoryVersion: memoryByAgent.get(k) ?? null,
-    runsCount: runsByAgent.get(k) ?? 0,
-  }));
+  // Pour chaque agent, charge son frontmatter pour connaître ses skills
+  // déclarés + vérifie quels SKILL.md sont effectivement présents sur disque.
+  const skillsPerAgent = await Promise.all(
+    AGENT_KEYS.map(async (k) => {
+      const def = await loadAgent(k);
+      const names = [
+        ...(def.frontmatter.skill ? [def.frontmatter.skill] : []),
+        ...(def.frontmatter.skills ?? []),
+      ];
+      const active: string[] = [];
+      const missing: string[] = [];
+      for (const n of names) {
+        const body = await loadSkill(n);
+        if (body) active.push(n);
+        else missing.push(n);
+      }
+      return { key: k, active, missing };
+    })
+  );
+  const skillsByAgent = new Map(skillsPerAgent.map((s) => [s.key, s]));
+
+  const stats: AgentStats[] = AGENT_KEYS.map((k) => {
+    const s = skillsByAgent.get(k);
+    return {
+      key: k,
+      model: MODEL_BY_AGENT[k],
+      knowledgeCount: knowledgeByAgent.get(k) ?? 0,
+      pendingFeedback: feedbackByAgent.get(k) ?? 0,
+      memoryVersion: memoryByAgent.get(k) ?? null,
+      runsCount: runsByAgent.get(k) ?? 0,
+      skillsActive: s?.active ?? [],
+      skillsMissing: s?.missing ?? [],
+    };
+  });
 
   return (
     <main className="mx-auto min-h-screen max-w-6xl px-6 py-12">
@@ -171,6 +205,29 @@ export default async function AgentsIndexPage({
                 <Stat label="Knowledge" value={s.knowledgeCount} />
                 <Stat label="Runs" value={s.runsCount} />
               </div>
+
+              {(s.skillsActive.length > 0 || s.skillsMissing.length > 0) && (
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {s.skillsActive.map((name) => (
+                    <span
+                      key={name}
+                      className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300"
+                      title="Skill actif (fichier présent + injecté à chaque run)"
+                    >
+                      🛠 {name}
+                    </span>
+                  ))}
+                  {s.skillsMissing.map((name) => (
+                    <span
+                      key={name}
+                      className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300"
+                      title="Skill déclaré mais fichier .claude/skills/<name>/SKILL.md manquant"
+                    >
+                      ⚠ {name}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               <div className="mt-3 text-[10px] text-[var(--color-muted-foreground)]">
                 modèle : <span className="font-mono">{s.model}</span>
