@@ -6,6 +6,7 @@ import {
   isAgencyActivated,
   getNextStep,
   getPreviousStep,
+  getStepPrefills,
   type StepKey,
   type StepConfig,
 } from "@/lib/agency";
@@ -76,6 +77,12 @@ export default async function StepPage({
 
   const profile = await isAgencyActivated(supabase, id);
   if (!profile) redirect(`/projects/${id}/agency`);
+
+  // Pré-remplissage intelligent des champs (depuis onboarding + mémoire)
+  const prefills = await getStepPrefills(supabase, {
+    projectId: id,
+    stepKey: step.key,
+  });
 
   // Charge l'état + les derniers livrables + les runs + statuts pour le stepper
   const [stepRes, delivRes, runRes, allStepsRes] = await Promise.all([
@@ -214,7 +221,12 @@ export default async function StepPage({
       )}
 
       {/* Formulaire de lancement */}
-      <LaunchForm step={step} action={launch} disabled={status === "in_progress"} />
+      <LaunchForm
+        step={step}
+        action={launch}
+        disabled={status === "in_progress"}
+        prefills={prefills}
+      />
 
       {/* Bonus pour étape 04 : pass production-assistant */}
       {step.key === "04-video-founder-ads" && deliverables.length > 0 && (
@@ -439,12 +451,15 @@ function LaunchForm({
   step,
   action,
   disabled,
+  prefills,
 }: {
   step: StepConfig;
   action: (formData: FormData) => void | Promise<void>;
   disabled: boolean;
+  prefills: Record<string, string>;
 }) {
   if (!step.agentKey) return null;
+  const hasPrefills = Object.values(prefills).some((v) => v && v.length > 0);
   return (
     <section className="mt-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
       <h2 className="text-sm font-semibold">▶ Lancer l&apos;étape</h2>
@@ -453,43 +468,60 @@ function LaunchForm({
         mémoire client + sa mémoire long terme + son knowledge enrichi, et
         produit un livrable horodaté.
       </p>
+      {hasPrefills && (
+        <p className="mt-2 rounded-md border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 px-3 py-1.5 text-[11px] text-[var(--color-primary)]">
+          ✨ Champs pré-remplis à partir de l&apos;onboarding et de la mémoire
+          client. Ajuste puis lance — ou clique « Lancer » direct.
+        </p>
+      )}
       <form action={action} className="mt-4 flex flex-col gap-3">
-        {(step.formFields ?? []).map((f) => (
-          <label key={f.name} className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
-              {f.label}
-              {f.required && <span className="ml-1 text-red-300">*</span>}
-            </span>
-            {f.type === "textarea" ? (
-              <textarea
-                name={f.name}
-                placeholder={f.placeholder}
-                required={f.required}
-                rows={4}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
-              />
-            ) : f.type === "select" ? (
-              <select
-                name={f.name}
-                required={f.required}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
-              >
-                {(f.options ?? []).map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                name={f.name}
-                placeholder={f.placeholder}
-                required={f.required}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
-              />
-            )}
-          </label>
-        ))}
+        {(step.formFields ?? []).map((f) => {
+          const prefill = prefills[f.name] ?? "";
+          return (
+            <label key={f.name} className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                {f.label}
+                {f.required && <span className="ml-1 text-red-300">*</span>}
+                {prefill && (
+                  <span className="ml-2 rounded bg-[var(--color-primary)]/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-[var(--color-primary)]">
+                    suggéré
+                  </span>
+                )}
+              </span>
+              {f.type === "textarea" ? (
+                <textarea
+                  name={f.name}
+                  placeholder={f.placeholder}
+                  required={f.required}
+                  rows={4}
+                  defaultValue={prefill}
+                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+                />
+              ) : f.type === "select" ? (
+                <select
+                  name={f.name}
+                  required={f.required}
+                  defaultValue={prefill || undefined}
+                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+                >
+                  {(f.options ?? []).map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  name={f.name}
+                  placeholder={f.placeholder}
+                  required={f.required}
+                  defaultValue={prefill}
+                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+                />
+              )}
+            </label>
+          );
+        })}
         <details>
           <summary className="cursor-pointer text-xs text-[var(--color-muted-foreground)]">
             Avancé · surcharger le prompt complet (override)

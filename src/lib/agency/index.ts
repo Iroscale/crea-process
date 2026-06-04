@@ -27,3 +27,4 @@ export {
   buildDocumentsContextMd,
 } from "./documents";
 export type { ClientDocumentRow } from "./documents";
+export { getStepPrefills } from "./prefill";
