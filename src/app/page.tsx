@@ -42,6 +42,7 @@ export default async function Home() {
     deliverablesRes,
     feedbackRes,
     complianceRes,
+    briefsRes,
   ] = await Promise.all([
     supabase
       .from("projects")
@@ -80,6 +81,13 @@ export default async function Home() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(5),
+    // Briefs créa (raccourci direct vers la création de visuels)
+    supabase
+      .from("briefs")
+      .select("id, project_id, title, status, updated_at")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(6),
   ]);
 
   const projects = projectsRes.data ?? [];
@@ -89,6 +97,7 @@ export default async function Home() {
   const deliverables = deliverablesRes.data ?? [];
   const feedback = feedbackRes.data ?? [];
   const compliance = complianceRes.data ?? [];
+  const briefs = briefsRes.data ?? [];
 
   const projectName = new Map<string, string>();
   for (const p of projects) projectName.set(p.id as string, p.name as string);
@@ -178,6 +187,12 @@ export default async function Home() {
             🆕 Nouveau client
           </Link>
           <Link
+            href="#creative-quick"
+            className="rounded-md border-2 border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-4 py-2 font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/15"
+          >
+            🎨 Création de visuels
+          </Link>
+          <Link
             href="/projects"
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1.5 hover:bg-[var(--color-accent)]"
           >
@@ -226,6 +241,120 @@ export default async function Home() {
           investiguer
         </div>
       )}
+
+      {/* ── 🎨 Création rapide de visuels (raccourci direct) ──────────────── */}
+      <section id="creative-quick" className="mt-10 scroll-mt-6">
+        <div className="rounded-2xl border-2 border-[var(--color-primary)]/40 bg-gradient-to-br from-[var(--color-primary)]/10 to-transparent p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase tracking-wider text-[var(--color-primary)]">
+                Raccourci créa
+              </div>
+              <h2 className="mt-1 text-xl font-bold">
+                🎨 Création rapide de visuels
+              </h2>
+              <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+                Besoin de créatives tout de suite ? Reprends un brief en cours
+                ou démarre un nouveau projet — sans repasser par tout le pipeline
+                Agency OS.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Link
+                href="/projects"
+                className="rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-foreground)] hover:opacity-90"
+              >
+                + Nouveau brief
+              </Link>
+            </div>
+          </div>
+
+          {briefs.length > 0 && (
+            <div className="mt-4">
+              <div className="text-[10px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                Tes derniers briefs
+              </div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {briefs.map((b) => {
+                  const pid = b.project_id as string;
+                  const bid = b.id as string;
+                  const status = (b.status as string) ?? "draft";
+                  return (
+                    <Link
+                      key={bid}
+                      href={`/projects/${pid}/briefs/${bid}`}
+                      className="block rounded-md border border-[var(--color-border)] bg-[var(--color-card)] p-3 text-xs transition hover:border-[var(--color-primary)] hover:bg-[var(--color-accent)]"
+                    >
+                      <div className="truncate font-semibold">
+                        {(b.title as string) || "(sans titre)"}
+                      </div>
+                      <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-[var(--color-muted-foreground)]">
+                        <span className="truncate">
+                          {projectName.get(pid) ?? pid.slice(0, 6)}
+                        </span>
+                        <span
+                          className={`shrink-0 rounded-full px-1.5 py-0.5 font-bold uppercase ${
+                            status === "ready"
+                              ? "bg-emerald-500/15 text-emerald-300"
+                              : status === "in_progress"
+                                ? "bg-sky-500/15 text-sky-300"
+                                : "bg-slate-500/15 text-slate-300"
+                          }`}
+                        >
+                          {status}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
+                        {new Date(b.updated_at as string).toLocaleString(
+                          "fr-FR",
+                          {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {briefs.length === 0 && (
+            <p className="mt-4 rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-card)] p-4 text-center text-xs text-[var(--color-muted-foreground)]">
+              Aucun brief encore. Clique « + Nouveau brief » → choisis un projet
+              → tu pourras créer un brief et générer des variations en quelques
+              minutes.
+            </p>
+          )}
+
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-3 text-[11px]">
+            <span className="text-[var(--color-muted-foreground)]">
+              Autres entrées :
+            </span>
+            <Link
+              href="/projects"
+              className="rounded border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-0.5 hover:bg-[var(--color-accent)]"
+            >
+              📁 Tous les projets
+            </Link>
+            <Link
+              href="/brands"
+              className="rounded border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-0.5 hover:bg-[var(--color-accent)]"
+            >
+              🎨 Marques
+            </Link>
+            <Link
+              href="/analyse"
+              className="rounded border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-0.5 hover:bg-[var(--color-accent)]"
+            >
+              🔍 Analyse de créa
+            </Link>
+          </div>
+        </div>
+      </section>
 
       {/* Reprendre */}
       <section className="mt-10">
