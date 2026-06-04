@@ -118,6 +118,7 @@ export default async function AgentDetailPage({
     anthropic: isProviderReady("anthropic"),
     openai: isProviderReady("openai"),
     google: isProviderReady("google"),
+    deepseek: isProviderReady("deepseek"),
   };
 
   // Signed URLs pour les knowledge avec fichier attaché

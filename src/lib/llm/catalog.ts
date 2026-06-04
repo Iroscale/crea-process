@@ -16,7 +16,7 @@
  *   sur un modèle.
  */
 
-export type LLMProvider = "anthropic" | "openai" | "google";
+export type LLMProvider = "anthropic" | "openai" | "google" | "deepseek";
 
 export interface ModelInfo {
   id: string;
@@ -78,10 +78,36 @@ export const MODEL_CATALOG: ModelInfo[] = [
       "Qualité maximale. Pour market-research (recherche profonde) et legal-compliance (fiabilité réglementaire).",
   },
 
-  // ── OpenAI (branchement à activer) ─────────────────────────────────────
+  // ── OpenAI ─────────────────────────────────────────────────────────────
+  {
+    id: "gpt-4o",
+    label: "GPT-4o",
+    provider: "openai",
+    tier: "premium",
+    contextWindow: 128_000,
+    supportsTools: true,
+    supportsCacheControl: true,
+    supportsWebSearch: false,
+    pricing: { input: 2.5, output: 10, cacheRead: 1.25, cacheWrite: 0 },
+    description:
+      "Modèle phare OpenAI. Excellent en synthèse, raisonnement, et code.",
+  },
+  {
+    id: "gpt-4o-mini",
+    label: "GPT-4o mini",
+    provider: "openai",
+    tier: "balanced",
+    contextWindow: 128_000,
+    supportsTools: true,
+    supportsCacheControl: true,
+    supportsWebSearch: false,
+    pricing: { input: 0.15, output: 0.6, cacheRead: 0.075, cacheWrite: 0 },
+    description:
+      "Version compacte de GPT-4o. Ratio coût/qualité agressif, idéal pour transformations à volume.",
+  },
   {
     id: "gpt-5",
-    label: "GPT-5",
+    label: "GPT-5 (à venir)",
     provider: "openai",
     tier: "premium",
     contextWindow: 400_000,
@@ -90,19 +116,35 @@ export const MODEL_CATALOG: ModelInfo[] = [
     supportsWebSearch: false,
     pricing: { input: 10, output: 30, cacheRead: 1, cacheWrite: 0 },
     description:
-      "Modèle phare OpenAI. Excellent en synthèse longue et raisonnement structuré.",
+      "Slot prévu pour GPT-5 quand il sera disponible. Mettre à jour le nom dans catalog.ts.",
   },
+
+  // ── DeepSeek (API compatible OpenAI) ──────────────────────────────────
   {
-    id: "gpt-5-mini",
-    label: "GPT-5 mini",
-    provider: "openai",
+    id: "deepseek-chat",
+    label: "DeepSeek Chat",
+    provider: "deepseek",
     tier: "balanced",
-    contextWindow: 200_000,
+    contextWindow: 128_000,
     supportsTools: true,
     supportsCacheControl: true,
     supportsWebSearch: false,
-    pricing: { input: 0.5, output: 2, cacheRead: 0.05, cacheWrite: 0 },
-    description: "Version compacte de GPT-5, ratio coût/qualité agressif.",
+    pricing: { input: 0.27, output: 1.1, cacheRead: 0.07, cacheWrite: 0 },
+    description:
+      "DeepSeek V3 — excellent rapport qualité/prix sur les tâches générales.",
+  },
+  {
+    id: "deepseek-reasoner",
+    label: "DeepSeek Reasoner",
+    provider: "deepseek",
+    tier: "premium",
+    contextWindow: 128_000,
+    supportsTools: false,
+    supportsCacheControl: true,
+    supportsWebSearch: false,
+    pricing: { input: 0.55, output: 2.19, cacheRead: 0.14, cacheWrite: 0 },
+    description:
+      "DeepSeek R1 — chain-of-thought avancé. Pour raisonnement complexe (juridique, analyse de risque).",
   },
 
   // ── Google (branchement à activer) ─────────────────────────────────────
@@ -151,6 +193,8 @@ export function isProviderReady(provider: LLMProvider): boolean {
       return !!process.env.OPENAI_API_KEY;
     case "google":
       return !!(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY);
+    case "deepseek":
+      return !!process.env.DEEPSEEK_API_KEY;
     default:
       return false;
   }
@@ -160,6 +204,7 @@ export const PROVIDER_LABELS: Record<LLMProvider, string> = {
   anthropic: "Anthropic (Claude)",
   openai: "OpenAI (GPT)",
   google: "Google (Gemini)",
+  deepseek: "DeepSeek",
 };
 
 export const TIER_LABELS: Record<ModelInfo["tier"], string> = {

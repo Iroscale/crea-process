@@ -31,6 +31,7 @@ import type { ChatRequest, ChatResponse, ChatUsage } from "./types";
 import { chatAnthropic } from "./anthropic-adapter";
 import { chatOpenAI } from "./openai-adapter";
 import { chatGoogle } from "./google-adapter";
+import { chatDeepSeek } from "./deepseek-adapter";
 import { resolveModel, type AgentKey } from "../agents/model-routing";
 
 // Re-exports pratiques
@@ -63,6 +64,8 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
       return chatOpenAI(req);
     case "google":
       return chatGoogle(req);
+    case "deepseek":
+      return chatDeepSeek(req);
     default:
       throw new Error(`Provider non supporté : ${info.provider}`);
   }

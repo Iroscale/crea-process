@@ -48,7 +48,8 @@
       "Bash(taskkill /F /PID 11100)",
       "PowerShell(Stop-Process -Id 11100 -Force)",
       "PowerShell(Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue)",
-      "Bash(echo \"Started PID: $!\")"
+      "Bash(echo \"Started PID: $!\")",
+      "Bash(curl -s -o /dev/null -w \"Status: %{http_code}\\\\n\" --max-time 3 http://localhost:3000/)"
     ]
   }
 }
