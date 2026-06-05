@@ -53,6 +53,13 @@ export const MEMORY_TEMPLATES: Record<MemorySlug, string> = {
 - Site / LP actuelle(s) :
 - Contact opérationnel :
 
+## ⭐ Mission de l'agence (NE PAS L'OUBLIER)
+- **Type de business** : (B2C | B2B | B2B2C | Mixte)
+- **Objectif principal** : (acquisition de leads qualifiés / RDV / vente directe / inscription simulateur / autre)
+- **Cible précise** : (qui exactement ? Si B2B : fonction, secteur, taille entreprise. Si B2C : sociodémo, patrimoine, situation)
+- **Action recherchée** : (ce que le prospect doit faire — prise de RDV / simulateur / appel / devis)
+- **Stade marché** : (émergent | en croissance | mature | saturé)
+
 ## Produit / service
 
 ## Proposition de valeur

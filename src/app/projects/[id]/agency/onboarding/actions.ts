@@ -24,6 +24,14 @@ export async function saveOnboardingAction(
   const vertical = String(formData.get("vertical") ?? "").trim() || null;
   const marche = String(formData.get("marche") ?? "").trim();
   const contact_op = String(formData.get("contact_op") ?? "").trim();
+
+  // ⭐ Mission de l'agence — signaux non négociables
+  const business_model = String(formData.get("business_model") ?? "").trim();
+  const objectif_principal = String(formData.get("objectif_principal") ?? "").trim();
+  const cible_precise = String(formData.get("cible_precise") ?? "").trim();
+  const action_recherchee = String(formData.get("action_recherchee") ?? "").trim();
+  const stade_marche = String(formData.get("stade_marche") ?? "").trim();
+
   const lp_urls = String(formData.get("lp_urls") ?? "")
     .split(/\r?\n/)
     .map((s) => s.trim())
@@ -41,6 +49,14 @@ export async function saveOnboardingAction(
   const onboarding_data = {
     marche,
     contact_op,
+    // ⭐ Mission
+    mission: {
+      business_model,
+      objectif_principal,
+      cible_precise,
+      action_recherchee,
+      stade_marche,
+    },
     lp_urls,
     access: {
       bm: access_bm,
@@ -100,11 +116,43 @@ export async function ingestOnboardingAction(
 
 ${blob}
 
-Tu produis :
-1. Un patch markdown pour client-profile.md (sections fixes du schéma).
-2. Une v0 de brand-voice.md (à affiner par copywriter plus tard).
-3. Une entrée pour decisions-log.md.
-4. La liste des manques à combler avant l'étape 1.`;
+# Instructions de calibration
+
+La section « ⭐ MISSION DE L'AGENCE » en tête du blob est la **boussole**.
+
+- Si **Type de business = B2B** : tous les ICP, angles, hooks, copies en
+  aval doivent s'adresser à des **décideurs en entreprise** (fonction,
+  secteur, taille). Le langage est celui d'un pair, pas d'un consommateur.
+  Pas de « vous et votre famille » — on parle de « votre boîte »,
+  « votre dirigeant », « vos équipes ».
+- Si **Type de business = B2C** : on parle au particulier sur son
+  patrimoine, son projet de vie, ses risques personnels.
+- Si **B2B2C** : tu identifies clairement les **2 cibles distinctes**
+  (le distributeur B2B + l'utilisateur final B2C) et tu structures
+  l'ICP comme tel.
+- Si **manquant ou ⚠** : tu **n'inventes pas** — tu mets la question
+  explicite dans la section « Manques à combler ».
+
+L'**Action recherchée** conditionne la LP, le quiz, le CTA. Si c'est
+« prise de RDV », pas de simulateur. Si c'est « inscription
+simulateur », pas de RDV.
+
+# Livrables
+
+1. Un patch markdown pour **client-profile.md** :
+   - **Première section** : reprends EXACTEMENT les 5 lignes de la Mission
+     (Type de business, Objectif, Cible précise, Action recherchée, Stade
+     marché). C'est la première chose que tous les agents liront.
+   - Puis les autres sections du schéma.
+2. Une v0 de **brand-voice.md** (à affiner par copywriter plus tard).
+   Si B2B, le registre par défaut est « pair à pair décideur ». Si B2C,
+   le registre par défaut suit la verticale (souvent « pédagogue posé »
+   pour le finance régulé).
+3. Une entrée pour **decisions-log.md** mentionnant le type de business
+   et l'objectif.
+4. La liste des **manques à combler** avant de lancer l'étape 1 — sois
+   strict : si la cible précise n'est pas définie, on ne lance pas le
+   market research.`;
 
   const result = await runAgent({
     supabase,
@@ -139,9 +187,43 @@ function buildOnboardingBlob(args: {
 }): string {
   const lines: string[] = [];
   const { vertical, od } = args;
-  lines.push(`Verticale : ${vertical}`);
-  if (od.marche) lines.push(`Marché : ${od.marche}`);
-  if (od.contact_op) lines.push(`Contact opérationnel : ${od.contact_op}`);
+  const mission = (od.mission ?? {}) as Record<string, string>;
+
+  // ⭐ Mission de l'agence — EN TÊTE, en majuscules, signaux non négociables
+  // pour que l'orchestrator (et tous les agents en aval) calibrent
+  // correctement B2B vs B2C, l'objectif, la cible.
+  lines.push("# ⭐ MISSION DE L'AGENCE — À LIRE EN PREMIER");
+  lines.push("");
+  lines.push(
+    "> Ces 5 signaux conditionnent TOUS les livrables en aval (market research, " +
+      "angles, copy, LP, campagnes). Ne les confonds pas. Si l'un manque, signale-le " +
+      "explicitement dans la section « Manques à combler » de ta synthèse — " +
+      "ne devine pas."
+  );
+  lines.push("");
+  lines.push(
+    `- **Type de business** : ${mission.business_model || "⚠ NON PRÉCISÉ — DEMANDER AU CLIENT"}`
+  );
+  lines.push(
+    `- **Objectif principal** : ${mission.objectif_principal || "⚠ NON PRÉCISÉ"}`
+  );
+  lines.push(
+    `- **Cible précise** : ${mission.cible_precise || "⚠ NON PRÉCISÉ"}`
+  );
+  lines.push(
+    `- **Action recherchée** : ${mission.action_recherchee || "⚠ NON PRÉCISÉ"}`
+  );
+  lines.push(
+    `- **Stade marché** : ${mission.stade_marche || "non précisé"}`
+  );
+  lines.push("");
+  lines.push("---");
+  lines.push("");
+  lines.push("# Identité");
+  lines.push(`- Verticale : ${vertical}`);
+  if (od.marche) lines.push(`- Marché : ${od.marche}`);
+  if (od.contact_op) lines.push(`- Contact opérationnel : ${od.contact_op}`);
+
   if (Array.isArray(od.lp_urls) && od.lp_urls.length > 0) {
     lines.push("\n## Landing pages actuelles");
     for (const u of od.lp_urls as string[]) lines.push(`- ${u}`);

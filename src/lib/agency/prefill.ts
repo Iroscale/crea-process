@@ -39,6 +39,13 @@ interface OnboardingData {
   lp_urls?: string[];
   fathom_recap?: string;
   docs_summary?: string;
+  mission?: {
+    business_model?: string;
+    objectif_principal?: string;
+    cible_precise?: string;
+    action_recherchee?: string;
+    stade_marche?: string;
+  };
   contraintes?: {
     reglementaires?: string;
     operationnelles?: string;
@@ -94,14 +101,15 @@ async function prefillMarketResearch(
 }
 
 /**
- * Construit une suggestion de niche en combinant verticale + cible + marché.
+ * Construit une suggestion de niche pour le market-research.
  *
- * Priorité :
- *   1. Si client-profile.md contient une "Promesse principale" ou une cible
- *      sociodémo explicite, on s'en sert.
- *   2. Sinon, on combine VERTICAL_LABELS + cible inférée (cherche un montant
- *      patrimoine dans onboarding) + marché.
- *   3. Fallback générique.
+ * Priorité (la première qui matche gagne) :
+ *   1. **Mission explicite** dans onboarding_data.mission (B2B/B2C + cible
+ *      précise + business model) — c'est la source de vérité, on l'utilise
+ *      mot pour mot.
+ *   2. Cible patrimoniale détectée dans client-profile.md ou onboarding.
+ *   3. Cible sociodémo (cadres, indépendants…) détectée dans le profile.
+ *   4. Fallback : verticale + patrimoine 250 k€+ + marché.
  */
 function buildNicheSuggestion(
   profile: ProfileRow | null,
@@ -111,8 +119,29 @@ function buildNicheSuggestion(
   const verticalLabel = VERTICAL_LABELS[vertical] ?? "Produits financiers";
   const od = (profile?.onboarding_data as OnboardingData | null) ?? {};
   const marche = od.marche || "France";
+  const mission = od.mission;
 
-  // 1. Cherche une cible patrimoniale explicite dans le profile.md
+  // 1. ⭐ MISSION EXPLICITE — priorité absolue
+  // Si l'équipe a déclaré B2B/B2C + cible précise, on construit la niche
+  // avec ces signaux mot pour mot, sans aucune inférence.
+  if (mission?.business_model && mission?.cible_precise) {
+    const bmTag =
+      mission.business_model === "B2B"
+        ? "B2B"
+        : mission.business_model === "B2B2C"
+          ? "B2B2C"
+          : mission.business_model === "Mixte"
+            ? "B2B + B2C"
+            : "B2C";
+    // Tronque la cible si trop longue (la niche reste lisible)
+    const cibleShort = mission.cible_precise
+      .split(/\r?\n/)[0]
+      .trim()
+      .slice(0, 180);
+    return `${verticalLabel} (${bmTag}) — cible : ${cibleShort} — marché ${marche}`;
+  }
+
+  // 2. Cherche une cible patrimoniale explicite dans le profile.md
   const patrimoineMatch =
     clientProfileMd.match(
       /patrimoine[^.\n]{0,40}?(\d{1,4}\s?(?:k|K|000)\s?€?|\d+\s?m€?)/i
@@ -124,11 +153,12 @@ function buildNicheSuggestion(
     ? `patrimoine ${patrimoineMatch[1]}+`
     : null;
 
-  // 2. Cherche une cible sociodémo (cadres, indépendants, …) dans le profile
+  // 3. Cherche une cible sociodémo (cadres, indépendants, …)
   const targetGroupMatch = clientProfileMd.match(
     /(?:cible|audience|persona|clients)[^.\n]{0,80}?(cadres? sup[ée]rieurs?|dirigeants? de PME|ind[ée]pendants?|chefs? d['']entreprise|professions? lib[ée]rales|retrait[ée]s? aisés|professions? r[ée]glementées)/i
   );
-  const target = patrimoineTarget || targetGroupMatch?.[1] || "patrimoine 250 k€+";
+  const target =
+    patrimoineTarget || targetGroupMatch?.[1] || "patrimoine 250 k€+";
 
   return `${verticalLabel} pour ${target} en ${marche}`;
 }

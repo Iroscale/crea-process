@@ -12,6 +12,13 @@ import SubmitButton from "../../briefs/[bid]/submit-button";
 interface OnboardingData {
   marche?: string;
   contact_op?: string;
+  mission?: {
+    business_model?: string;
+    objectif_principal?: string;
+    cible_precise?: string;
+    action_recherchee?: string;
+    stade_marche?: string;
+  };
   lp_urls?: string[];
   access?: { bm?: string; google_ads?: string; page_fb?: string; pixel?: string };
   contraintes?: { reglementaires?: string; operationnelles?: string; tonales?: string };
@@ -123,6 +130,81 @@ export default async function OnboardingPage({
       {sp.error && <Banner kind="error">{decodeURIComponent(sp.error)}</Banner>}
 
       <form action={save} className="mt-8 flex flex-col gap-6">
+        <Section
+          title="⭐ Mission de l'agence — non négociable"
+          subtitle="Ces 5 signaux conditionnent TOUS les livrables en aval (market research, angles, copy, LP, campagnes). Sois explicite. Si tu hésites, mieux vaut laisser vide que mettre une approximation."
+          highlight
+        >
+          <Field label="Type de business *">
+            <select
+              name="business_model"
+              defaultValue={od.mission?.business_model ?? ""}
+              required
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+            >
+              <option value="">— choisir —</option>
+              <option value="B2C">B2C (particulier final)</option>
+              <option value="B2B">B2B (entreprise/professionnel)</option>
+              <option value="B2B2C">
+                B2B2C (on s&apos;adresse au distributeur ET au consommateur)
+              </option>
+              <option value="Mixte">
+                Mixte (B2B + B2C selon les campagnes)
+              </option>
+            </select>
+          </Field>
+          <Field label="Stade marché">
+            <select
+              name="stade_marche"
+              defaultValue={od.mission?.stade_marche ?? ""}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+            >
+              <option value="">— non précisé —</option>
+              <option value="émergent">Émergent — peu de concurrents</option>
+              <option value="en croissance">
+                En croissance — éducation marché
+              </option>
+              <option value="mature">Mature — bataille des angles</option>
+              <option value="saturé">
+                Saturé — différenciation forte requise
+              </option>
+            </select>
+          </Field>
+          <Field label="Objectif principal *" full>
+            <input
+              name="objectif_principal"
+              defaultValue={od.mission?.objectif_principal ?? ""}
+              required
+              placeholder="Ex (B2B) : Générer 30 RDV qualifiés/mois auprès de DRH de PME 50-500 personnes pour notre solution de prévoyance collective."
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+            />
+          </Field>
+          <Field label="Cible précise (qui exactement ?) *" full>
+            <textarea
+              name="cible_precise"
+              rows={3}
+              defaultValue={od.mission?.cible_precise ?? ""}
+              required
+              placeholder={
+                "Ex B2B : Fonction (DRH, dirigeant PME, courtier…) + secteur + taille entreprise + douleur principale.\nEx B2C : Sociodémo + patrimoine + situation de vie + déclencheur d'achat."
+              }
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+            />
+          </Field>
+          <Field
+            label="Action recherchée (ce que le prospect doit faire) *"
+            full
+          >
+            <input
+              name="action_recherchee"
+              defaultValue={od.mission?.action_recherchee ?? ""}
+              required
+              placeholder="Ex : prendre un RDV de 30 min · faire un simulateur en ligne · demander un devis · télécharger un livre blanc + opt-in"
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+            />
+          </Field>
+        </Section>
+
         <Section title="Cadre">
           <Field label="Verticale">
             <select
@@ -323,16 +405,37 @@ export default async function OnboardingPage({
 
 function Section({
   title,
+  subtitle,
   children,
+  highlight = false,
 }: {
   title: string;
+  subtitle?: string;
   children: React.ReactNode;
+  highlight?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+    <div
+      className={`rounded-xl border p-5 ${
+        highlight
+          ? "border-2 border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5"
+          : "border-[var(--color-border)] bg-[var(--color-card)]"
+      }`}
+    >
+      <h2
+        className={`text-xs font-semibold uppercase tracking-wider ${
+          highlight
+            ? "text-[var(--color-primary)]"
+            : "text-[var(--color-muted-foreground)]"
+        }`}
+      >
         {title}
       </h2>
+      {subtitle && (
+        <p className="mt-1 text-[11px] text-[var(--color-muted-foreground)]">
+          {subtitle}
+        </p>
+      )}
       <div className="mt-3 grid gap-3 sm:grid-cols-2">{children}</div>
     </div>
   );

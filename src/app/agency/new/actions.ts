@@ -35,6 +35,14 @@ export async function createClientAction(formData: FormData): Promise<void> {
   const vertical = String(formData.get("vertical") ?? "").trim() || null;
   const marche = String(formData.get("marche") ?? "").trim();
   const contact_op = String(formData.get("contact_op") ?? "").trim();
+
+  // ⭐ Mission — non négociable
+  const business_model = String(formData.get("business_model") ?? "").trim();
+  const objectif_principal = String(formData.get("objectif_principal") ?? "").trim();
+  const cible_precise = String(formData.get("cible_precise") ?? "").trim();
+  const action_recherchee = String(formData.get("action_recherchee") ?? "").trim();
+  const stade_marche = String(formData.get("stade_marche") ?? "").trim();
+
   const lp_urls = String(formData.get("lp_urls") ?? "")
     .split(/\r?\n/)
     .map((s) => s.trim())
@@ -81,12 +89,24 @@ export async function createClientAction(formData: FormData): Promise<void> {
   // ─── 3. Sauvegarde onboarding_data ───────────────────────────────────────
   const hasAnyOnboarding =
     marche || contact_op || lp_urls.length > 0 || contraintes_regle ||
-    contraintes_ops || contraintes_ton || fathom_recap || docs_summary;
+    contraintes_ops || contraintes_ton || fathom_recap || docs_summary ||
+    business_model || objectif_principal || cible_precise || action_recherchee ||
+    stade_marche;
 
-  if (hasAnyOnboarding) {
+  const hasMission =
+    business_model || objectif_principal || cible_precise || action_recherchee;
+
+  if (hasAnyOnboarding || hasMission) {
     const onboarding_data = {
       marche,
       contact_op,
+      mission: {
+        business_model,
+        objectif_principal,
+        cible_precise,
+        action_recherchee,
+        stade_marche,
+      },
       lp_urls,
       access: { bm: "", google_ads: "", page_fb: "", pixel: "" },
       contraintes: {

@@ -98,9 +98,71 @@ export default async function NewClientWizardPage({
           </Field>
         </Section>
 
-        {/* Onboarding */}
+        {/* ⭐ Mission de l'agence — non négociable */}
         <Section
           n={2}
+          title="⭐ Mission de l'agence (non négociable)"
+          subtitle="Ces 5 signaux conditionnent TOUS les agents en aval. Si tu hésites, mieux vaut laisser vide que de mettre une approximation que les agents prendront pour parole d'évangile."
+        >
+          <Field label="Type de business *">
+            <select
+              name="business_model"
+              required
+              defaultValue=""
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+            >
+              <option value="">— choisir —</option>
+              <option value="B2C">B2C (particulier final)</option>
+              <option value="B2B">B2B (entreprise / pro)</option>
+              <option value="B2B2C">B2B2C (distributeur + consommateur)</option>
+              <option value="Mixte">Mixte</option>
+            </select>
+          </Field>
+          <Field label="Stade marché">
+            <select
+              name="stade_marche"
+              defaultValue=""
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+            >
+              <option value="">— non précisé —</option>
+              <option value="émergent">Émergent</option>
+              <option value="en croissance">En croissance</option>
+              <option value="mature">Mature</option>
+              <option value="saturé">Saturé</option>
+            </select>
+          </Field>
+          <Field label="Objectif principal *" full>
+            <input
+              name="objectif_principal"
+              required
+              placeholder="Ex (B2B) : 30 RDV qualifiés/mois auprès de DRH de PME 50-500 personnes"
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+            />
+          </Field>
+          <Field label="Cible précise (qui exactement ?) *" full>
+            <textarea
+              name="cible_precise"
+              rows={3}
+              required
+              placeholder={
+                "Ex B2B : fonction + secteur + taille + douleur principale.\nEx B2C : sociodémo + patrimoine + situation de vie + déclencheur."
+              }
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+            />
+          </Field>
+          <Field label="Action recherchée (ce que le prospect doit faire) *" full>
+            <input
+              name="action_recherchee"
+              required
+              placeholder="Ex : prendre un RDV · faire un simulateur · demander un devis · télécharger un livre blanc"
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+            />
+          </Field>
+        </Section>
+
+        {/* Onboarding */}
+        <Section
+          n={3}
           title="Onboarding initial"
           subtitle="Ce que tu as déjà du client. Le minimum à fournir pour pouvoir lancer l'analyse marché ensuite : un récap Fathom + une URL de LP actuelle."
         >
@@ -132,7 +194,7 @@ export default async function NewClientWizardPage({
 
         {/* Contraintes */}
         <Section
-          n={3}
+          n={4}
           title="Contraintes"
           subtitle="Ce qui borne le ton, le copy et les claims dès le départ. Les agents les liront en permanence."
         >
@@ -164,7 +226,7 @@ export default async function NewClientWizardPage({
 
         {/* Option auto-ingest */}
         <Section
-          n={4}
+          n={5}
           title="Lancer l'ingestion tout de suite ?"
           subtitle="Si tu as bien rempli le récap Fathom, l'orchestrator peut tout de suite produire la synthèse d'onboarding et patcher client-profile.md. Sinon décoche, tu lanceras quand prêt."
         >
