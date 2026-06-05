@@ -187,7 +187,7 @@ export default async function Home() {
             🆕 Nouveau client
           </Link>
           <Link
-            href="#creative-quick"
+            href="/projects"
             className="rounded-md border-2 border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-4 py-2 font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/15"
           >
             🎨 Création de visuels
