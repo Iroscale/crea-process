@@ -18,6 +18,7 @@ export type StepKey =
   | "02-angles-promesses"
   | "03-broad-mix"
   | "04-video-founder-ads"
+  | "04b-primary-texts"
   | "05-image-concepts"
   | "06-landing-page"
   | "07-quiz-funnel"
@@ -274,8 +275,67 @@ pour la version prompteur.`,
     ],
   },
   {
-    key: "05-image-concepts",
+    // P0.5 — Textes publicitaires Meta (primary texts au-dessus des créas)
+    key: "04b-primary-texts",
     order: 5,
+    agentKey: "copywriter",
+    title: "Textes publicitaires",
+    emoji: "📝",
+    tagline: "Primary texts Meta par angle (court / moyen / long)",
+    gate: true,
+    category: "pipeline",
+    expectsBefore: ["02-angles-promesses"],
+    deliverableKind: "primary-texts",
+    structuredKind: "primary-text",
+    defaultPrompt: `Rédige {variants_per_angle} variantes de primary text Meta PAR ANGLE
+validé sélectionné (les angles complets sont fournis dans le contexte).
+Si des scripts validés sont aussi sélectionnés, rattache chaque primary
+text au script correspondant via script_ref.
+
+Longueurs : court ≈ 80 mots · moyen ≈ 150 mots · long ≈ 300 mots.
+Varie les longueurs entre les variantes d'un même angle.
+
+Contraintes Meta :
+- La PREMIÈRE LIGNE est le hook — c'est la seule visible avant le
+  « … Voir plus ». Elle doit arrêter le scroll seule.
+- Pas d'emojis excessifs (max 2-3 par texte, ou zéro si brand voice sobre).
+- Mention du risque obligatoire si produit d'investissement (le préambule
+  liste les claims interdits).
+- CTA explicite en fin de texte.
+
+Note particulière : {note}`,
+    formFields: [
+      {
+        name: "angles",
+        label: "Angles validés",
+        type: "items-select",
+        itemKind: "angle",
+        required: true,
+      },
+      {
+        name: "scripts",
+        label: "Scripts validés à rattacher (optionnel)",
+        type: "items-select",
+        itemKind: "script",
+      },
+      {
+        name: "variants_per_angle",
+        label: "Variantes par angle",
+        type: "select",
+        options: ["2", "3", "4"],
+        required: true,
+      },
+      {
+        name: "note",
+        label: "Note (optionnel)",
+        type: "textarea",
+        placeholder: "Ex : ton très sobre, vouvoiement strict.",
+      },
+    ],
+  },
+  {
+    key: "05-image-concepts",
+    order: 6,
     agentKey: "copywriter",
     title: "10 concepts image",
     emoji: "🖼️",
@@ -321,7 +381,7 @@ Note particulière : {note}`,
   },
   {
     key: "06-landing-page",
-    order: 6,
+    order: 7,
     agentKey: "copywriter",
     title: "Landing page",
     emoji: "🪜",
@@ -364,7 +424,7 @@ Objections, FAQ, CTA final.`,
   },
   {
     key: "07-quiz-funnel",
-    order: 7,
+    order: 8,
     agentKey: "funnel-builder",
     title: "Quiz funnel",
     emoji: "❓",
@@ -412,7 +472,7 @@ résultat, intégrations CRM + événements à tracker.`,
   },
   {
     key: "08-video-brief",
-    order: 8,
+    order: 9,
     agentKey: "video-editor",
     title: "Brief montage vidéo",
     emoji: "✂️",
@@ -446,7 +506,7 @@ Rushs disponibles : {rushs}`,
   },
   {
     key: "09-tracking",
-    order: 9,
+    order: 10,
     agentKey: "tracking",
     title: "Tracking",
     emoji: "📡",
@@ -493,7 +553,7 @@ enhanced conversions, convention UTM, mapping Datablaster, QA checklist.`,
   },
   {
     key: "10-campaign-setup",
-    order: 10,
+    order: 11,
     agentKey: "media-buyer",
     title: "Campaign setup",
     emoji: "🚀",
@@ -537,7 +597,7 @@ kill/scale/refresh, vues Datablaster attendues.`,
   // ─── ÉTAPES EXTRA ──────────────────────────────────────────────────────
   {
     key: "retrospective",
-    order: 11,
+    order: 12,
     agentKey: "learning-curator",
     title: "Rétrospective",
     emoji: "♻️",
@@ -579,7 +639,7 @@ agency_playbooks/winning-hooks-bank (anonymisé), agent_memory/*.`,
   },
   {
     key: "export-memory",
-    order: 12,
+    order: 13,
     agentKey: null,
     title: "Export mémoire",
     emoji: "📤",
