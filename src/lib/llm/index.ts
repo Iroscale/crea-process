@@ -44,7 +44,14 @@ export {
   TIER_LABELS,
 };
 export type { LLMProvider, ModelInfo };
-export type { ChatRequest, ChatResponse, ChatUsage, SystemBlock, ChatBlock } from "./types";
+export type {
+  ChatRequest,
+  ChatResponse,
+  ChatUsage,
+  SystemBlock,
+  ChatBlock,
+  ChatTurn,
+} from "./types";
 
 /**
  * Point d'entrée unique : envoie une requête à un modèle, route vers

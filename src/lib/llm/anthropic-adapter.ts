@@ -36,11 +36,19 @@ export async function chatAnthropic(
       ...(b.cacheable ? { cache_control: { type: "ephemeral" as const } } : {}),
     }));
 
+  const messages = [
+    ...(req.history ?? []).map((t) => ({
+      role: t.role as "user" | "assistant",
+      content: t.content,
+    })),
+    { role: "user" as const, content: req.userMessage },
+  ];
+
   const params = {
     model: req.model,
     max_tokens: req.maxTokens ?? 4000,
     system: systemBlocks,
-    messages: [{ role: "user" as const, content: req.userMessage }],
+    messages,
     ...(req.tools && req.tools.length > 0 ? { tools: req.tools } : {}),
   };
 

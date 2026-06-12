@@ -47,3 +47,9 @@ export type { AgentFeedbackRow, Rating } from "./feedback";
 export { generateRefineProposal, commitRefinement } from "./refine";
 export type { RefineProposal } from "./refine";
 export { loadSkill, loadSkillsBundle, clearSkillCache } from "./skills";
+export {
+  chatOnDeliverable,
+  listDeliverableMessages,
+  extractUpdatedDeliverable,
+} from "./chatOnDeliverable";
+export type { DeliverableChatMessage } from "./chatOnDeliverable";

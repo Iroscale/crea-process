@@ -7,6 +7,7 @@ import {
   updateDeliverableVersioned,
   restoreDeliverableVersion,
 } from "@/lib/agency";
+import { chatOnDeliverable } from "@/lib/agents";
 
 async function loadUserOr401() {
   const supabase = await createClient();
@@ -39,6 +40,83 @@ export async function saveDeliverableAction(
       `/projects/${projectId}/agency/deliverables/${deliverableId}?error=${encodeURIComponent(res.error)}`
     );
   }
+  revalidatePath(`/projects/${projectId}/agency/deliverables/${deliverableId}`);
+  redirect(
+    `/projects/${projectId}/agency/deliverables/${deliverableId}?saved=1`
+  );
+}
+
+// ── P0.2 : chat itératif sur le livrable ─────────────────────────────────
+export async function sendChatMessageAction(
+  projectId: string,
+  deliverableId: string,
+  formData: FormData
+): Promise<void> {
+  const { supabase, userId } = await loadUserOr401();
+  const message = String(formData.get("message") ?? "").trim();
+  if (!message) {
+    redirect(`/projects/${projectId}/agency/deliverables/${deliverableId}`);
+  }
+  const res = await chatOnDeliverable({
+    supabase,
+    userId,
+    projectId,
+    deliverableId,
+    userMessage: message,
+  });
+  if ("error" in res) {
+    redirect(
+      `/projects/${projectId}/agency/deliverables/${deliverableId}?error=${encodeURIComponent(res.error)}`
+    );
+  }
+  revalidatePath(`/projects/${projectId}/agency/deliverables/${deliverableId}`);
+  redirect(`/projects/${projectId}/agency/deliverables/${deliverableId}#chat-end`);
+}
+
+/**
+ * Applique la proposition d'un message assistant comme nouvelle version
+ * du livrable (choix explicite de l'opérateur).
+ */
+export async function applyProposalAction(
+  projectId: string,
+  deliverableId: string,
+  messageId: string
+): Promise<void> {
+  const { supabase, userId } = await loadUserOr401();
+
+  const { data: msg } = await supabase
+    .from("deliverable_messages")
+    .select("proposed_content_md")
+    .eq("id", messageId)
+    .eq("deliverable_id", deliverableId)
+    .maybeSingle();
+  const proposed = (msg?.proposed_content_md as string) ?? "";
+  if (!proposed.trim()) {
+    redirect(
+      `/projects/${projectId}/agency/deliverables/${deliverableId}?error=${encodeURIComponent(
+        "Pas de proposition à appliquer sur ce message"
+      )}`
+    );
+  }
+
+  const res = await updateDeliverableVersioned(supabase, {
+    userId,
+    deliverableId,
+    newContentMd: proposed,
+    source: "chat",
+  });
+  if ("error" in res) {
+    redirect(
+      `/projects/${projectId}/agency/deliverables/${deliverableId}?error=${encodeURIComponent(res.error)}`
+    );
+  }
+
+  // Trace la version appliquée sur le message
+  await supabase
+    .from("deliverable_messages")
+    .update({ applied_version: res.newVersion })
+    .eq("id", messageId);
+
   revalidatePath(`/projects/${projectId}/agency/deliverables/${deliverableId}`);
   redirect(
     `/projects/${projectId}/agency/deliverables/${deliverableId}?saved=1`

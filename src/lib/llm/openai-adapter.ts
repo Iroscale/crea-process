@@ -50,8 +50,14 @@ export async function chatViaOpenAISDK(
     .filter((s) => s.trim().length > 0)
     .join("\n\n---\n\n");
 
-  const messages: Array<{ role: "system" | "user"; content: string }> = [];
+  const messages: Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }> = [];
   if (systemText.trim()) messages.push({ role: "system", content: systemText });
+  for (const t of req.history ?? []) {
+    messages.push({ role: t.role, content: t.content });
+  }
   messages.push({ role: "user", content: req.userMessage });
 
   // Tools : si fourni dans le format Anthropic (web_search natif), on

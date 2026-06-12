@@ -9,10 +9,20 @@ export interface SystemBlock {
   cacheable?: boolean;
 }
 
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface ChatRequest {
   model: string;
   systemBlocks: SystemBlock[];
   userMessage: string;
+  /**
+   * Historique de conversation optionnel (multi-tours). Les tours sont
+   * envoyés avant userMessage. Utilisé par le chat itératif sur livrable.
+   */
+  history?: ChatTurn[];
   maxTokens?: number;
   /**
    * Outils côté serveur (web_search Anthropic, function-calling, etc.).
