@@ -79,6 +79,12 @@ export interface StepConfig {
    * validables (✅/❌/✏️/🔄 par item).
    */
   structuredKind?: ItemKind;
+  /**
+   * P1.3 : budget de tokens de sortie de l'étape. Défaut : 12 000 si
+   * structuredKind, sinon 8 000. À augmenter pour les livrables longs
+   * (market-research 12k, LP 16k).
+   */
+  maxTokens?: number;
 }
 
 export const STEPS: StepConfig[] = [
@@ -130,6 +136,7 @@ Tu produis :
     expectsBefore: ["onboarding"],
     deliverableKind: "icp",
     memorySlug: "icp",
+    maxTokens: 12000,
     defaultPrompt: `Niche / sujet à creuser : {niche}
 Région cible : {region}
 
@@ -390,6 +397,7 @@ Note particulière : {note}`,
     category: "pipeline",
     expectsBefore: ["02-angles-promesses"],
     deliverableKind: "landing-page",
+    maxTokens: 16000,
     defaultPrompt: `Rédige la landing page complète pour la promesse maîtresse, en
 intégrant 3-5 objections de la banque d'objections (memory/icp.md).
 

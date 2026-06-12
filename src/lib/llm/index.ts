@@ -54,8 +54,24 @@ export type {
 } from "./types";
 
 /**
+ * P1.3 : une erreur est "réessayable" si elle est transitoire — réseau,
+ * 429 (rate limit), 5xx, surcharge Anthropic (529 / overloaded).
+ */
+function isRetryableError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const status = (e as { status?: number })?.status;
+  if (status && (status === 429 || status >= 500)) return true;
+  return /overloaded|rate.?limit|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed|network|socket hang up/i.test(
+    msg
+  );
+}
+
+/**
  * Point d'entrée unique : envoie une requête à un modèle, route vers
  * le bon adaptateur selon son provider catalogué.
+ *
+ * P1.3 : retry automatique unique (backoff 2 s) sur les erreurs
+ * transitoires (réseau, 429, 5xx, surcharge).
  */
 export async function chat(req: ChatRequest): Promise<ChatResponse> {
   const info = getModelInfo(req.model);
@@ -64,17 +80,27 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
       `Modèle inconnu : ${req.model}. Ajoute-le dans src/lib/llm/catalog.ts.`
     );
   }
-  switch (info.provider) {
-    case "anthropic":
-      return chatAnthropic(req);
-    case "openai":
-      return chatOpenAI(req);
-    case "google":
-      return chatGoogle(req);
-    case "deepseek":
-      return chatDeepSeek(req);
-    default:
-      throw new Error(`Provider non supporté : ${info.provider}`);
+  const dispatch = (): Promise<ChatResponse> => {
+    switch (info.provider) {
+      case "anthropic":
+        return chatAnthropic(req);
+      case "openai":
+        return chatOpenAI(req);
+      case "google":
+        return chatGoogle(req);
+      case "deepseek":
+        return chatDeepSeek(req);
+      default:
+        throw new Error(`Provider non supporté : ${info.provider}`);
+    }
+  };
+
+  try {
+    return await dispatch();
+  } catch (e) {
+    if (!isRetryableError(e)) throw e;
+    await new Promise((r) => setTimeout(r, 2000));
+    return dispatch();
   }
 }
 

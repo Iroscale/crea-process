@@ -273,6 +273,7 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
     cache_creation_tokens: 0,
   };
   let outputBlocks: ChatBlock[] = [];
+  let truncated = false;
   try {
     const resp = await chat({
       model,
@@ -284,6 +285,9 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
     text = resp.text;
     outputBlocks = resp.blocks;
     usage = resp.usage;
+    // P1.3 : sortie tronquée détectée — on garde le texte partiel mais
+    // on trace clairement le problème dans le run.
+    truncated = resp.stopReason === "max_tokens";
   } catch (err) {
     const msg = (err as Error).message;
     await supabase
@@ -361,6 +365,13 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
       cache_creation_tokens: usage.cache_creation_tokens,
       cost_estimate_usd: costUsd,
       finished_at: new Date().toISOString(),
+      // P1.3 : sortie tronquée — visible dans l'UI runs sans faire
+      // échouer le run (le texte partiel reste exploitable).
+      ...(truncated
+        ? {
+            error_message: `⚠ Sortie tronquée (max_tokens=${maxTokens} atteint) — augmente le budget de l'étape ou relance.`,
+          }
+        : {}),
     })
     .eq("id", runId);
 

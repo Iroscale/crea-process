@@ -52,6 +52,11 @@ export interface ChatResponse {
   usage: ChatUsage;
   provider: LLMProvider;
   model: string;
+  /**
+   * P1.3 : raison d'arrêt normalisée. 'max_tokens' = sortie TRONQUÉE
+   * (l'appelant doit le détecter), 'end_turn' = fin normale.
+   */
+  stopReason?: "end_turn" | "max_tokens" | "tool_use" | "other";
   /** Réponse brute du SDK pour debug avancé. */
   raw?: unknown;
 }

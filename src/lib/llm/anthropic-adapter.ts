@@ -64,6 +64,16 @@ export async function chatAnthropic(
     .trim();
 
   const u = (resp as unknown as { usage?: AnthropicUsage }).usage ?? {};
+  // P1.3 : normalise stop_reason ('max_tokens' = sortie tronquée)
+  const rawStop = (resp as unknown as { stop_reason?: string }).stop_reason;
+  const stopReason =
+    rawStop === "max_tokens"
+      ? ("max_tokens" as const)
+      : rawStop === "end_turn"
+        ? ("end_turn" as const)
+        : rawStop === "tool_use"
+          ? ("tool_use" as const)
+          : ("other" as const);
   return {
     text,
     blocks,
@@ -75,6 +85,7 @@ export async function chatAnthropic(
     },
     provider: "anthropic",
     model: req.model,
+    stopReason,
     raw: resp,
   };
 }

@@ -95,6 +95,16 @@ export async function chatViaOpenAISDK(
   }
 
   const usage = resp.usage;
+  // P1.3 : normalise finish_reason ('length' = max_tokens atteint)
+  const finish = choice?.finish_reason;
+  const stopReason =
+    finish === "length"
+      ? ("max_tokens" as const)
+      : finish === "stop"
+        ? ("end_turn" as const)
+        : finish === "tool_calls"
+          ? ("tool_use" as const)
+          : ("other" as const);
   return {
     text,
     blocks,
@@ -109,6 +119,7 @@ export async function chatViaOpenAISDK(
     },
     provider: providerTag,
     model: req.model,
+    stopReason,
     raw: resp,
   };
 }

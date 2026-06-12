@@ -84,7 +84,17 @@ export async function launchStepAction(
         selectedItemsContext += `\n## item_key: ${it.item_key}\n${it.content_md}\n`;
       }
     } else {
-      values[f.name] = String(formData.get(f.name) ?? "");
+      const v = String(formData.get(f.name) ?? "").trim();
+      // P1.3 : un champ requis vide ne part plus en « — » silencieux —
+      // erreur UI avant l'appel.
+      if (f.required && !v) {
+        redirect(
+          `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
+            `Le champ « ${f.label} » est requis`
+          )}`
+        );
+      }
+      values[f.name] = v;
     }
   }
   const promptOverride = String(formData.get("prompt_override") ?? "").trim();
@@ -179,7 +189,7 @@ export async function launchStepAction(
         stepKey: step.key,
         task: finalTask,
         tools,
-        maxTokens: structuredKind ? 12000 : 8000,
+        maxTokens: step.maxTokens ?? (structuredKind ? 12000 : 8000),
         deliverable: {
           kind: step.deliverableKind,
           title: deliverableTitle,
