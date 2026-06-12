@@ -75,6 +75,12 @@ export interface RunAgentArgs {
    * validation humaine même si l'agent en lui-même n'a pas de gate.
    */
   gateOverride?: boolean;
+  /**
+   * P0.6 : run pré-créé par l'appelant (exécution asynchrone). runAgent
+   * met à jour cette ligne au lieu d'en insérer une nouvelle — la ligne
+   * existe donc AVANT le redirect, ce qui permet le polling côté UI.
+   */
+  existingRunId?: string;
 }
 
 export interface AgentRunResult {
@@ -199,35 +205,46 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
     });
   }
 
-  // ─── Crée la ligne agent_runs en status 'running' ────────────────────────
-  const { data: runRow, error: runErr } = await supabase
-    .from("agent_runs")
-    .insert({
-      project_id: projectId,
-      user_id: userId,
-      step_key: stepKey,
-      agent_key: agentKey,
-      model,
-      status: "running",
-      input_snapshot: {
-        task,
-        agent: agent.frontmatter,
-        memory_chars: fullMemory.length,
-        identity_extras_chars: identityExtras.length,
-        agent_memory_version: agentMem?.version ?? null,
-        knowledge_used: knowledgeMd.length > 0,
-        skills_loaded: skillNames,
-        model_source: modelSource,
-      },
-    })
-    .select("id")
-    .single();
-  if (runErr || !runRow) {
-    throw new Error(
-      `Impossible de créer agent_runs : ${runErr?.message ?? "unknown"}`
-    );
+  // ─── Crée (ou met à jour) la ligne agent_runs en 'running' ──────────────
+  const inputSnapshot = {
+    task,
+    agent: agent.frontmatter,
+    memory_chars: fullMemory.length,
+    identity_extras_chars: identityExtras.length,
+    agent_memory_version: agentMem?.version ?? null,
+    knowledge_used: knowledgeMd.length > 0,
+    skills_loaded: skillNames,
+    model_source: modelSource,
+  };
+  let runId: string;
+  if (args.existingRunId) {
+    // P0.6 : run pré-créé par l'appelant pour le polling
+    runId = args.existingRunId;
+    await supabase
+      .from("agent_runs")
+      .update({ model, input_snapshot: inputSnapshot })
+      .eq("id", runId);
+  } else {
+    const { data: runRow, error: runErr } = await supabase
+      .from("agent_runs")
+      .insert({
+        project_id: projectId,
+        user_id: userId,
+        step_key: stepKey,
+        agent_key: agentKey,
+        model,
+        status: "running",
+        input_snapshot: inputSnapshot,
+      })
+      .select("id")
+      .single();
+    if (runErr || !runRow) {
+      throw new Error(
+        `Impossible de créer agent_runs : ${runErr?.message ?? "unknown"}`
+      );
+    }
+    runId = runRow.id as string;
   }
-  const runId = runRow.id as string;
 
   // Marque pipeline_steps comme in_progress
   if (updatePipelineStep) {

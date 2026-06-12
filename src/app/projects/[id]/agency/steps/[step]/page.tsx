@@ -29,7 +29,12 @@ import {
 } from "../../actions";
 import AgencyNav from "../../_components/agency-nav";
 import StepStepper from "../../_components/step-stepper";
+import RunPoller from "../../_components/run-poller";
 import SubmitButton from "../../../briefs/[bid]/submit-button";
+
+// P0.6 : les server actions de cette page déclenchent des runs LLM longs
+// via after() — la lambda doit pouvoir vivre jusqu'à 5 min (Vercel Fluid).
+export const maxDuration = 300;
 
 const STATUS_STYLE: Record<string, string> = {
   todo: "bg-slate-500/15 text-slate-300 border-slate-500/30",
@@ -126,6 +131,9 @@ export default async function StepPage({
     statusByStep.set(r.step_key as string, r.status as string);
   }
 
+  // P0.6 : run en cours sur cette étape ? → poller + bouton désactivé
+  const runningRun = runs.find((r) => r.status === "running");
+
   // P0.3 : items structurés du dernier livrable + options des items-select
   const latestDeliverable = deliverables[0];
   let stepItems: DeliverableItemRow[] = [];
@@ -210,6 +218,15 @@ export default async function StepPage({
         </div>
       )}
 
+      {/* P0.6 : run en cours → polling + mise à jour auto */}
+      {runningRun && (
+        <RunPoller
+          projectId={id}
+          stepKey={step.key}
+          startedAt={(runningRun.started_at as string) ?? null}
+        />
+      )}
+
       {/* ─── CTA contextuel principal selon le statut ───────────────────── */}
       {status === "validated" && nextStep && (
         <ContinueBanner
@@ -288,7 +305,7 @@ export default async function StepPage({
       <LaunchForm
         step={step}
         action={launch}
-        disabled={status === "in_progress"}
+        disabled={status === "in_progress" || Boolean(runningRun)}
         prefills={prefills}
         itemsSelectOptions={itemsSelectOptions}
         blockedBy={blockedBy}

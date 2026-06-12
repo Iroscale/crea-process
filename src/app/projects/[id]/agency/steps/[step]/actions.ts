@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   STEP_BY_KEY,
@@ -108,53 +109,130 @@ export async function launchStepAction(
         ]
       : undefined;
 
-  const result = await runAgent({
-    supabase,
-    userId,
-    projectId,
-    agentKey: step.agentKey,
-    stepKey: step.key,
-    task: finalTask,
-    tools,
-    maxTokens: step.structuredKind ? 12000 : 8000,
-    deliverable: {
-      kind: step.deliverableKind,
-      title: `${step.emoji} ${step.title} · ${new Date().toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
-    },
-    gateOverride: step.gate,
-  });
-
-  if (result.status === "failed") {
+  // ─── P0.6 : exécution asynchrone ────────────────────────────────────────
+  // Anti double-submit : si un run est déjà en cours sur ce step, on refuse.
+  const { data: alreadyRunning } = await supabase
+    .from("agent_runs")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("step_key", step.key)
+    .eq("status", "running")
+    .limit(1)
+    .maybeSingle();
+  if (alreadyRunning) {
     redirect(
       `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
-        result.errorMessage ?? "Erreur agent"
+        "Un agent travaille déjà sur cette étape — attends la fin du run en cours."
       )}`
     );
   }
 
-  // P0.3 : post-traitement structuré — parse JSON (+1 retry), insère les
-  // deliverable_items, re-rend le content_md du livrable depuis les items.
-  if (step.structuredKind && result.deliverableId) {
-    const structured = await processStructuredOutput(supabase, {
-      userId,
-      projectId,
-      deliverableId: result.deliverableId,
-      kind: step.structuredKind,
-      rawText: result.text,
-      model: result.model,
-    });
-    if ("error" in structured) {
-      redirect(
-        `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
-          `Génération OK mais structuration échouée : ${structured.error}. Le livrable brut est consultable.`
-        )}`
-      );
-    }
+  // Crée la ligne agent_runs AVANT le redirect pour permettre le polling.
+  const { data: runRow, error: runErr } = await supabase
+    .from("agent_runs")
+    .insert({
+      project_id: projectId,
+      user_id: userId,
+      step_key: step.key,
+      agent_key: step.agentKey,
+      model: "(résolution en cours)",
+      status: "running",
+      input_snapshot: { task: finalTask },
+    })
+    .select("id")
+    .single();
+  if (runErr || !runRow) {
+    redirect(
+      `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
+        runErr?.message ?? "Création du run impossible"
+      )}`
+    );
   }
+  const runId = runRow.id as string;
+
+  // Le step passe in_progress immédiatement (visible sur le kanban)
+  await supabase.from("pipeline_steps").upsert(
+    {
+      project_id: projectId,
+      user_id: userId,
+      step_key: step.key,
+      status: "in_progress",
+      current_run_id: runId,
+      has_gate: step.gate,
+    },
+    { onConflict: "project_id,step_key" }
+  );
+
+  // Le travail lourd (appel LLM 1-5 min) s'exécute APRÈS la réponse HTTP
+  // via after() (Next 15.1 stable, supporté par Vercel via waitUntil).
+  // La page poll agent_runs.status toutes les 3 s.
+  const agentKey = step.agentKey;
+  const structuredKind = step.structuredKind;
+  const deliverableTitle = `${step.emoji} ${step.title} · ${new Date().toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
+  after(async () => {
+    try {
+      const result = await runAgent({
+        supabase,
+        userId,
+        projectId,
+        agentKey,
+        stepKey: step.key,
+        task: finalTask,
+        tools,
+        maxTokens: structuredKind ? 12000 : 8000,
+        deliverable: {
+          kind: step.deliverableKind,
+          title: deliverableTitle,
+        },
+        gateOverride: step.gate,
+        existingRunId: runId,
+      });
+
+      // P0.3 : post-traitement structuré (parse JSON + retry + items)
+      if (
+        structuredKind &&
+        result.status === "done" &&
+        result.deliverableId
+      ) {
+        const structured = await processStructuredOutput(supabase, {
+          userId,
+          projectId,
+          deliverableId: result.deliverableId,
+          kind: structuredKind,
+          rawText: result.text,
+          model: result.model,
+        });
+        if ("error" in structured) {
+          // On ne fait pas échouer le run : le livrable brut reste
+          // consultable. On trace l'erreur dans le run.
+          await supabase
+            .from("agent_runs")
+            .update({
+              error_message: `Structuration échouée : ${structured.error}`,
+            })
+            .eq("id", runId);
+        }
+      }
+    } catch (e) {
+      await supabase
+        .from("agent_runs")
+        .update({
+          status: "failed",
+          error_message: (e as Error).message,
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", runId);
+      await supabase
+        .from("pipeline_steps")
+        .update({ status: "failed" })
+        .eq("project_id", projectId)
+        .eq("step_key", step.key);
+    }
+  });
 
   revalidatePath(`/projects/${projectId}/agency`);
   revalidatePath(`/projects/${projectId}/agency/steps/${stepKey}`);
-  redirect(`/projects/${projectId}/agency/steps/${stepKey}`);
+  redirect(`/projects/${projectId}/agency/steps/${stepKey}?launched=1`);
 }
 
 /**
