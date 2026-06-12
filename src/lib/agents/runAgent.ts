@@ -81,6 +81,14 @@ export interface RunAgentArgs {
    * existe donc AVANT le redirect, ce qui permet le polling côté UI.
    */
   existingRunId?: string;
+  /**
+   * Si true, runAgent persiste l'output mais NE passe PAS le run à 'done' :
+   * l'appelant a encore du post-traitement (ex. parse + insertion des items
+   * structurés) et finalisera le statut lui-même. Sans ça, le poller UI
+   * rafraîchit la page avant que les items soient en DB et l'utilisateur
+   * voit un livrable « sans cartes ».
+   */
+  deferDoneStatus?: boolean;
 }
 
 export interface AgentRunResult {
@@ -353,10 +361,15 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
   }
 
   // ─── Marque agent_runs comme done + persiste l'output ────────────────────
+  // Si deferDoneStatus : on persiste tout SAUF status/finished_at — le run
+  // reste 'running' jusqu'à ce que l'appelant ait fini son post-traitement
+  // (items structurés) et appelle finalizeRun().
   await supabase
     .from("agent_runs")
     .update({
-      status: "done",
+      ...(args.deferDoneStatus
+        ? {}
+        : { status: "done", finished_at: new Date().toISOString() }),
       output: { text, blocks: outputBlocks },
       deliverable_id: deliverableId ?? null,
       prompt_tokens: usage.prompt_tokens,
@@ -364,7 +377,6 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
       cache_read_tokens: usage.cache_read_tokens,
       cache_creation_tokens: usage.cache_creation_tokens,
       cost_estimate_usd: costUsd,
-      finished_at: new Date().toISOString(),
       // P1.3 : sortie tronquée — visible dans l'UI runs sans faire
       // échouer le run (le texte partiel reste exploitable).
       ...(truncated

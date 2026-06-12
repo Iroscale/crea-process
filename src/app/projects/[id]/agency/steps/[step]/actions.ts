@@ -196,6 +196,9 @@ export async function launchStepAction(
         },
         gateOverride: step.gate,
         existingRunId: runId,
+        // Le run ne passe à 'done' qu'une fois les items insérés — sinon
+        // le poller rafraîchit la page avant les cartes d'items.
+        deferDoneStatus: Boolean(structuredKind),
       });
 
       // P0.3 : post-traitement structuré (parse JSON + retry + items)
@@ -222,6 +225,15 @@ export async function launchStepAction(
             })
             .eq("id", runId);
         }
+      }
+
+      // Finalise le run différé (items en DB → le poller peut rafraîchir).
+      if (structuredKind) {
+        await supabase
+          .from("agent_runs")
+          .update({ status: "done", finished_at: new Date().toISOString() })
+          .eq("id", runId)
+          .eq("status", "running");
       }
     } catch (e) {
       await supabase

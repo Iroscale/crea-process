@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { runAgent } from "@/lib/agents";
 
@@ -154,31 +155,79 @@ simulateur », pas de RDV.
    strict : si la cible précise n'est pas définie, on ne lance pas le
    market research.`;
 
-  const result = await runAgent({
-    supabase,
-    userId,
-    projectId,
-    agentKey: "orchestrator",
-    stepKey: "onboarding",
-    task,
-    deliverable: {
-      kind: "onboarding-synthesis",
-      title: `📥 Synthèse d'onboarding · ${new Date().toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
-    },
-    gateOverride: false,
-  });
-
-  if (result.status === "failed") {
+  // ─── Exécution asynchrone (même pattern que launchStepAction / P0.6) ────
+  // Anti double-submit : si une ingestion tourne déjà, on refuse.
+  const { data: alreadyRunning } = await supabase
+    .from("agent_runs")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("step_key", "onboarding")
+    .eq("status", "running")
+    .limit(1)
+    .maybeSingle();
+  if (alreadyRunning) {
     redirect(
       `/projects/${projectId}/agency/onboarding?error=${encodeURIComponent(
-        result.errorMessage ?? "Erreur orchestrator"
+        "L'orchestrator travaille déjà sur l'ingestion — attends la fin du run en cours."
       )}`
     );
   }
 
+  // Crée la ligne agent_runs AVANT le redirect pour permettre le polling.
+  const { data: runRow, error: runErr } = await supabase
+    .from("agent_runs")
+    .insert({
+      project_id: projectId,
+      user_id: userId,
+      step_key: "onboarding",
+      agent_key: "orchestrator",
+      model: "(résolution en cours)",
+      status: "running",
+      input_snapshot: { task },
+    })
+    .select("id")
+    .single();
+  if (runErr || !runRow) {
+    redirect(
+      `/projects/${projectId}/agency/onboarding?error=${encodeURIComponent(
+        runErr?.message ?? "Création du run impossible"
+      )}`
+    );
+  }
+  const runId = runRow.id as string;
+
+  const deliverableTitle = `📥 Synthèse d'onboarding · ${new Date().toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
+  after(async () => {
+    try {
+      await runAgent({
+        supabase,
+        userId,
+        projectId,
+        agentKey: "orchestrator",
+        stepKey: "onboarding",
+        task,
+        deliverable: {
+          kind: "onboarding-synthesis",
+          title: deliverableTitle,
+        },
+        gateOverride: false,
+        existingRunId: runId,
+      });
+    } catch (e) {
+      await supabase
+        .from("agent_runs")
+        .update({
+          status: "failed",
+          error_message: (e as Error).message,
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", runId);
+    }
+  });
+
   revalidatePath(`/projects/${projectId}/agency`);
   revalidatePath(`/projects/${projectId}/agency/onboarding`);
-  redirect(`/projects/${projectId}/agency/onboarding?ingested=1`);
+  redirect(`/projects/${projectId}/agency/onboarding?ingesting=1`);
 }
 
 function buildOnboardingBlob(args: {

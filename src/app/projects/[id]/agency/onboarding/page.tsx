@@ -9,6 +9,10 @@ import {
 } from "./actions";
 import { uploadDocumentsAction } from "../documents/actions";
 import SubmitButton from "../../briefs/[bid]/submit-button";
+import RunPoller from "../_components/run-poller";
+
+// L'ingestion orchestrator (after()) peut durer plusieurs minutes.
+export const maxDuration = 300;
 
 interface OnboardingData {
   marche?: string;
@@ -66,6 +70,17 @@ export default async function OnboardingPage({
     projectId: id,
     onlyActive: false,
   });
+
+  // Dernier run d'ingestion (orchestrator) — pour le poller + les bannières.
+  const { data: lastIngestRun } = await supabase
+    .from("agent_runs")
+    .select("id, status, started_at, error_message")
+    .eq("project_id", id)
+    .eq("step_key", "onboarding")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const ingestRunning = lastIngestRun?.status === "running";
   const save = saveOnboardingAction.bind(null, id);
   const ingest = ingestOnboardingAction.bind(null, id);
   const uploadDocs = uploadDocumentsAction.bind(null, id);
@@ -99,7 +114,19 @@ export default async function OnboardingPage({
       {sp.saved && (
         <Banner kind="success">Données d&apos;onboarding sauvegardées.</Banner>
       )}
-      {sp.ingested && (
+      {ingestRunning && (
+        <RunPoller
+          projectId={id}
+          stepKey="onboarding"
+          startedAt={lastIngestRun?.started_at ?? null}
+        />
+      )}
+      {!ingestRunning && lastIngestRun?.status === "failed" && (
+        <Banner kind="error">
+          ❌ L&apos;ingestion a échoué : {lastIngestRun.error_message ?? "erreur inconnue"} — relance-la en bas de page.
+        </Banner>
+      )}
+      {(sp.ingested || (!ingestRunning && lastIngestRun?.status === "done")) && (
         <section className="mt-6 rounded-xl border-2 border-emerald-500/40 bg-emerald-500/10 p-5">
           <p className="text-sm font-semibold text-emerald-300">
             ✅ Synthèse produite par l&apos;orchestrator
@@ -470,14 +497,20 @@ export default async function OnboardingPage({
           structurée et propose les patches à appliquer à client-profile.md +
           brand-voice.md + decisions-log.md.
         </p>
-        <form action={ingest} className="mt-3 flex justify-end">
-          <SubmitButton
-            pendingLabel="Ingestion en cours (15-30s)…"
-            className="rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-foreground)] hover:opacity-90"
-          >
-            ▶ Lancer l&apos;ingestion
-          </SubmitButton>
-        </form>
+        {ingestRunning ? (
+          <p className="mt-3 text-right text-sm text-sky-300">
+            🤖 Ingestion en cours — la page s&apos;actualisera automatiquement.
+          </p>
+        ) : (
+          <form action={ingest} className="mt-3 flex justify-end">
+            <SubmitButton
+              pendingLabel="Lancement…"
+              className="rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-foreground)] hover:opacity-90"
+            >
+              ▶ Lancer l&apos;ingestion
+            </SubmitButton>
+          </form>
+        )}
       </section>
     </main>
   );

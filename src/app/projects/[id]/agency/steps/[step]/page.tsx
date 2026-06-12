@@ -278,6 +278,24 @@ export default async function StepPage({
           message="Étape validée. Tu peux enchaîner."
         />
       )}
+      {/* Étape sans gate mais qui alimente une mémoire (ex. 02-angles) :
+          on propose l'application — utile pour les étapes aval qui lisent
+          la mémoire plutôt que les items (landing page, quiz…). */}
+      {status === "validated" && step.memorySlug && latestDeliverable && (
+        <div className="mt-3 flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+          <Link
+            href={`/projects/${id}/agency/steps/${step.key}/apply`}
+            className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"
+          >
+            🧠 Appliquer le livrable à la mémoire{" "}
+            <span className="font-mono">{step.memorySlug}</span> →
+          </Link>
+          <p className="text-[11px] text-[var(--color-muted-foreground)]">
+            Optionnel mais recommandé une fois les items validés — les étapes
+            aval (LP, quiz) lisent cette mémoire.
+          </p>
+        </div>
+      )}
       {status === "gate_pending" && (
         <section className="mt-6 rounded-xl border-2 border-amber-500/40 bg-amber-500/5 p-5">
           <h2 className="text-sm font-semibold text-amber-300">
@@ -1010,8 +1028,8 @@ function LaunchForm({
         <div className="flex items-center justify-between">
           <p className="text-[11px] text-[var(--color-muted-foreground)]">
             {step.agentKey === "market-research"
-              ? "💡 Recherche web réelle, ~30-90s"
-              : "⏱ ~10-30s"}
+              ? "💡 Recherche web réelle, ~2-4 min"
+              : "⏱ ~1-3 min"}
           </p>
           <SubmitButton
             disabled={disabled}
