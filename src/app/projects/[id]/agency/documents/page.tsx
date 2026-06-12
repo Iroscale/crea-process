@@ -10,6 +10,7 @@ import {
   uploadDocumentsAction,
   deleteDocumentAction,
   toggleDocumentActiveAction,
+  toggleDocumentCoreAction,
 } from "./actions";
 import SubmitButton from "../../briefs/[bid]/submit-button";
 
@@ -198,6 +199,11 @@ export default async function DocumentsPage({
                     <h3 className="text-sm font-semibold truncate">
                       {d.file_name}
                     </h3>
+                    {d.is_core && (
+                      <span className="rounded-full bg-[var(--color-primary)]/15 px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-primary)]">
+                        ⭐ cœur — injecté en entier
+                      </span>
+                    )}
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
                         PARSE_BADGE[d.parse_status]
@@ -238,6 +244,25 @@ export default async function DocumentsPage({
                       ⬇ Télécharger
                     </a>
                   )}
+                  <form
+                    action={toggleDocumentCoreAction.bind(
+                      null,
+                      id,
+                      d.id,
+                      !d.is_core
+                    )}
+                  >
+                    <button
+                      className={`rounded-md border px-2 py-1 text-[11px] ${
+                        d.is_core
+                          ? "border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+                          : "border-[var(--color-border)] hover:bg-[var(--color-accent)]"
+                      }`}
+                      title="Les documents CŒUR (ICP, brief client) sont injectés EN ENTIER dans le contexte des agents"
+                    >
+                      {d.is_core ? "⭐ cœur" : "☆ marquer cœur"}
+                    </button>
+                  </form>
                   <form
                     action={toggleDocumentActiveAction.bind(
                       null,

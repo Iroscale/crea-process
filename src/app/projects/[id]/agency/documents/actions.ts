@@ -106,3 +106,19 @@ export async function toggleDocumentActiveAction(
   revalidatePath(`/projects/${projectId}/agency/documents`);
   redirect(`/projects/${projectId}/agency/documents`);
 }
+
+/** P0.7 : marque/démarque un document comme CŒUR (injecté en entier). */
+export async function toggleDocumentCoreAction(
+  projectId: string,
+  documentId: string,
+  isCore: boolean
+): Promise<void> {
+  const { supabase, userId } = await loadUserOr401();
+  await updateDocumentMeta(supabase, {
+    userId,
+    id: documentId,
+    isCore,
+  });
+  revalidatePath(`/projects/${projectId}/agency/documents`);
+  redirect(`/projects/${projectId}/agency/documents`);
+}

@@ -12,18 +12,22 @@
  *   - TXT / MD  → lecture brute UTF-8
  *   - Images / autres → pas de parse, juste le nom dans le contexte
  *
- * Injection :
- *   buildDocumentsContextMd(projectId) retourne un bloc markdown qui
- *   liste les documents actifs avec leur description + 1500 caractères
- *   de texte extrait par doc (cap total 25 000 caractères).
- *   Ce bloc est passé en `extraMemoryMarkdown` dans runAgent.
+ * Injection (P0.7) :
+ *   buildDocumentsContextMd(projectId) retourne un bloc markdown avec les
+ *   documents actifs. Les documents CŒUR (is_core — ICP, brief client)
+ *   sont injectés EN ENTIER (cap 80 000 chars chacun) ; les autres en
+ *   extrait (30 000 chars). Cap total 150 000 chars : en cas de
+ *   dépassement, les non-core sont tronqués d'abord et la troncature est
+ *   signalée explicitement dans le contexte. Le prompt caching absorbe
+ *   le coût (bloc mémoire client cacheable).
  */
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const BUCKET = "agency-docs";
-const MAX_PARSE_CHARS_PER_DOC = 1500;
-const MAX_CONTEXT_CHARS_TOTAL = 25_000;
+const MAX_CHARS_CORE_DOC = 80_000;
+const MAX_CHARS_STANDARD_DOC = 30_000;
+const MAX_CONTEXT_CHARS_TOTAL = 150_000;
 
 export interface ClientDocumentRow {
   id: string;
@@ -38,6 +42,7 @@ export interface ClientDocumentRow {
   parse_status: "pending" | "done" | "skipped" | "failed";
   parse_error: string | null;
   is_active: boolean;
+  is_core: boolean;
   category: string | null;
   uploaded_at: string;
 }
@@ -204,12 +209,14 @@ export async function updateDocumentMeta(
     description?: string;
     category?: string;
     isActive?: boolean;
+    isCore?: boolean;
   }
 ): Promise<void> {
   const patch: Record<string, unknown> = {};
   if (args.description !== undefined) patch.description = args.description;
   if (args.category !== undefined) patch.category = args.category;
   if (args.isActive !== undefined) patch.is_active = args.isActive;
+  if (args.isCore !== undefined) patch.is_core = args.isCore;
   if (Object.keys(patch).length === 0) return;
   await supabase
     .from("client_documents")
@@ -228,11 +235,16 @@ export async function createSignedUrl(
   return data?.signedUrl ?? null;
 }
 
-// ── Injection contexte agents ─────────────────────────────────────────────
+// ── Injection contexte agents (P0.7) ─────────────────────────────────────
 /**
  * Construit un bloc markdown à injecter dans `extraMemoryMarkdown` de runAgent.
- * Liste les documents actifs avec leur description + extrait de leur parsed_text,
- * capé à MAX_CONTEXT_CHARS_TOTAL.
+ *
+ * Stratégie de budget (cap total 150 000 chars) :
+ *   1. Les documents CŒUR (is_core) d'abord, en entier (cap 80 000 chacun).
+ *   2. Puis les autres, en extrait (cap 30 000 chacun).
+ *   3. Toute troncature est signalée explicitement dans le contexte
+ *      (« ⚠ document X tronqué à N caractères ») pour que l'agent sache
+ *      qu'il ne voit pas tout.
  *
  * Retourne "" si aucun document actif.
  */
@@ -247,30 +259,44 @@ export async function buildDocumentsContextMd(
   });
   if (docs.length === 0) return "";
 
+  // Cœur d'abord (injectés en entier), puis les autres
+  const ordered = [
+    ...docs.filter((d) => d.is_core),
+    ...docs.filter((d) => !d.is_core),
+  ];
+
   const lines: string[] = [
     "# Documents client (transmis à l'onboarding)",
     "",
-    "> Ces documents ont été uploadés par l'équipe humaine et sont la matière première du client. Cite-les explicitement quand tu les mobilises.",
+    "> Ces documents ont été uploadés par l'équipe humaine et sont la matière première du client. Cite-les explicitement quand tu les mobilises. Les documents marqués CŒUR sont la source de vérité prioritaire.",
     "",
   ];
   let totalChars = lines.reduce((a, l) => a + l.length, 0);
+  const skipped: string[] = [];
 
-  for (const d of docs) {
-    if (totalChars > MAX_CONTEXT_CHARS_TOTAL) {
-      lines.push(`\n_(autres documents tronqués pour limiter le contexte)_`);
-      break;
+  for (const d of ordered) {
+    const perDocCap = d.is_core ? MAX_CHARS_CORE_DOC : MAX_CHARS_STANDARD_DOC;
+    const remaining = MAX_CONTEXT_CHARS_TOTAL - totalChars;
+    if (remaining < 500) {
+      skipped.push(d.file_name);
+      continue;
     }
-    lines.push(`## ${d.file_name}`);
+    const docBudget = Math.min(perDocCap, remaining);
+
+    lines.push(`## ${d.is_core ? "⭐ [CŒUR] " : ""}${d.file_name}`);
     if (d.category) lines.push(`_Catégorie : ${d.category}_`);
     if (d.description) lines.push(`_Description équipe : ${d.description}_`);
     if (d.parse_status === "done" && d.parsed_text) {
-      const excerpt = d.parsed_text.trim().slice(0, MAX_PARSE_CHARS_PER_DOC);
+      const full = d.parsed_text.trim();
+      const excerpt = full.slice(0, docBudget);
       lines.push("\n```");
       lines.push(excerpt);
-      if (d.parsed_text.length > MAX_PARSE_CHARS_PER_DOC) {
-        lines.push(`\n[…tronqué — ${d.parsed_text.length} caractères au total]`);
-      }
       lines.push("```");
+      if (full.length > excerpt.length) {
+        lines.push(
+          `\n⚠ Document tronqué : ${excerpt.length.toLocaleString("fr-FR")} caractères affichés sur ${full.length.toLocaleString("fr-FR")}. Signale-le si la partie manquante te semble nécessaire.`
+        );
+      }
     } else if (d.parse_status === "skipped") {
       lines.push(`_(format non texte — pas d'extraction. Le fichier est conservé.)_`);
     } else if (d.parse_status === "failed") {
@@ -278,6 +304,12 @@ export async function buildDocumentsContextMd(
     }
     lines.push("");
     totalChars = lines.reduce((a, l) => a + l.length, 0);
+  }
+
+  if (skipped.length > 0) {
+    lines.push(
+      `\n⚠ Budget de contexte atteint — documents NON inclus : ${skipped.join(", ")}. Demande à l'opérateur de les marquer CŒUR s'ils sont essentiels.`
+    );
   }
   return lines.join("\n");
 }
