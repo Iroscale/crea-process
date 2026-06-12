@@ -6,7 +6,15 @@ import { createClient } from "@/lib/supabase/server";
 import {
   STEP_BY_KEY,
   fillPrompt,
+  buildStructuredInstruction,
+  processStructuredOutput,
+  regenerateSingleItem,
+  generateMoreItems,
+  setItemStatus,
+  rerenderDeliverableFromItems,
   type StepKey,
+  type ItemStatus,
+  type ItemKind,
 } from "@/lib/agency";
 import { runAgent } from "@/lib/agents";
 
@@ -39,15 +47,54 @@ export async function launchStepAction(
 
   const { supabase, userId } = await loadUserOr401();
 
-  // Récupère les valeurs des form fields config + l'override de prompt
+  // Récupère les valeurs des form fields config + l'override de prompt.
+  // P0.3 : les fields items-select fournissent des item_keys d'items
+  // VALIDÉS — on injecte leur contenu complet dans le contexte.
   const values: Record<string, string> = {};
+  let selectedItemsContext = "";
   for (const f of step.formFields ?? []) {
-    values[f.name] = String(formData.get(f.name) ?? "");
+    if (f.type === "items-select") {
+      const selectedIds = formData
+        .getAll(f.name)
+        .map((v) => String(v))
+        .filter(Boolean);
+      if (selectedIds.length === 0) {
+        if (f.required) {
+          redirect(
+            `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
+              `Sélectionne au moins un item pour « ${f.label} »`
+            )}`
+          );
+        }
+        values[f.name] = "—";
+        continue;
+      }
+      const { data: items } = await supabase
+        .from("deliverable_items")
+        .select("item_key, title, content_md, status")
+        .eq("project_id", projectId)
+        .in("id", selectedIds);
+      const validatedItems = (items ?? []).filter(
+        (i) => i.status === "validated"
+      );
+      values[f.name] = validatedItems.map((i) => i.item_key).join(", ");
+      selectedItemsContext += `\n\n# ${f.label} (items validés — référence-les via leur item_key)\n`;
+      for (const it of validatedItems) {
+        selectedItemsContext += `\n## item_key: ${it.item_key}\n${it.content_md}\n`;
+      }
+    } else {
+      values[f.name] = String(formData.get(f.name) ?? "");
+    }
   }
   const promptOverride = String(formData.get("prompt_override") ?? "").trim();
-  const finalTask = promptOverride
+  let finalTask = promptOverride
     ? promptOverride
     : fillPrompt(step.defaultPrompt, values);
+  if (selectedItemsContext) finalTask += selectedItemsContext;
+  // P0.3 : sortie JSON structurée pour les étapes décomposées en items
+  if (step.structuredKind) {
+    finalTask += buildStructuredInstruction(step.structuredKind);
+  }
 
   // Outils par étape — pour l'instant seul market-research utilise web_search
   const tools =
@@ -69,6 +116,7 @@ export async function launchStepAction(
     stepKey: step.key,
     task: finalTask,
     tools,
+    maxTokens: step.structuredKind ? 12000 : 8000,
     deliverable: {
       kind: step.deliverableKind,
       title: `${step.emoji} ${step.title} · ${new Date().toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
@@ -82,6 +130,26 @@ export async function launchStepAction(
         result.errorMessage ?? "Erreur agent"
       )}`
     );
+  }
+
+  // P0.3 : post-traitement structuré — parse JSON (+1 retry), insère les
+  // deliverable_items, re-rend le content_md du livrable depuis les items.
+  if (step.structuredKind && result.deliverableId) {
+    const structured = await processStructuredOutput(supabase, {
+      userId,
+      projectId,
+      deliverableId: result.deliverableId,
+      kind: step.structuredKind,
+      rawText: result.text,
+      model: result.model,
+    });
+    if ("error" in structured) {
+      redirect(
+        `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
+          `Génération OK mais structuration échouée : ${structured.error}. Le livrable brut est consultable.`
+        )}`
+      );
+    }
   }
 
   revalidatePath(`/projects/${projectId}/agency`);
@@ -157,4 +225,80 @@ ${note ? `# Note particulière\n${note}` : ""}`;
 
   revalidatePath(`/projects/${projectId}/agency/steps/04-video-founder-ads`);
   redirect(`/projects/${projectId}/agency/steps/04-video-founder-ads`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// P0.3 — Actions par item structuré
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Change le statut d'un item (valider / rejeter / re-proposer). */
+export async function itemStatusAction(
+  projectId: string,
+  stepKey: StepKey,
+  itemId: string,
+  deliverableId: string,
+  kind: ItemKind,
+  status: ItemStatus
+): Promise<void> {
+  const { supabase, userId } = await loadUserOr401();
+  await setItemStatus(supabase, { userId, itemId, status });
+  // Le rendu du livrable reflète les items non-rejetés
+  await rerenderDeliverableFromItems(supabase, { deliverableId, kind });
+  revalidatePath(`/projects/${projectId}/agency/steps/${stepKey}`);
+  redirect(`/projects/${projectId}/agency/steps/${stepKey}#items`);
+}
+
+/** Régénère UN item via l'agent (avec consigne optionnelle). */
+export async function regenerateItemAction(
+  projectId: string,
+  stepKey: StepKey,
+  itemId: string,
+  formData: FormData
+): Promise<void> {
+  const { supabase, userId } = await loadUserOr401();
+  const instruction =
+    String(formData.get("instruction") ?? "").trim() || undefined;
+  const res = await regenerateSingleItem(supabase, {
+    userId,
+    projectId,
+    itemId,
+    instruction,
+  });
+  if ("error" in res) {
+    redirect(
+      `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(res.error)}`
+    );
+  }
+  revalidatePath(`/projects/${projectId}/agency/steps/${stepKey}`);
+  redirect(`/projects/${projectId}/agency/steps/${stepKey}#items`);
+}
+
+/** « Propose-m'en N de plus » via l'agent. */
+export async function addMoreItemsAction(
+  projectId: string,
+  stepKey: StepKey,
+  deliverableId: string,
+  formData: FormData
+): Promise<void> {
+  const { supabase, userId } = await loadUserOr401();
+  const count = Math.min(
+    Math.max(parseInt(String(formData.get("count") ?? "3"), 10) || 3, 1),
+    6
+  );
+  const instruction =
+    String(formData.get("instruction") ?? "").trim() || undefined;
+  const res = await generateMoreItems(supabase, {
+    userId,
+    projectId,
+    deliverableId,
+    count,
+    instruction,
+  });
+  if ("error" in res) {
+    redirect(
+      `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(res.error)}`
+    );
+  }
+  revalidatePath(`/projects/${projectId}/agency/steps/${stepKey}`);
+  redirect(`/projects/${projectId}/agency/steps/${stepKey}#items`);
 }

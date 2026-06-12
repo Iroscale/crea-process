@@ -10,6 +10,7 @@
  * par les valeurs saisies dans le formulaire.
  */
 import type { AgentKey, MemorySlug } from "@/lib/agents";
+import type { ItemKind } from "./items";
 
 export type StepKey =
   | "onboarding"
@@ -50,8 +51,14 @@ export interface StepConfig {
   formFields?: Array<{
     name: string;
     label: string;
-    type: "text" | "textarea" | "select";
+    /**
+     * items-select : multi-select des deliverable_items VALIDÉS du kind
+     * `itemKind` (P0.3) — l'aval consomme les items validés, jamais du
+     * texte libre.
+     */
+    type: "text" | "textarea" | "select" | "items-select";
     options?: string[];
+    itemKind?: ItemKind;
     placeholder?: string;
     required?: boolean;
   }>;
@@ -65,6 +72,12 @@ export interface StepConfig {
    * items structurés en aval).
    */
   memorySlug?: MemorySlug;
+  /**
+   * P0.3 : si renseigné, l'étape produit une sortie JSON structurée
+   * décomposée en deliverable_items de ce kind, individuellement
+   * validables (✅/❌/✏️/🔄 par item).
+   */
+  structuredKind?: ItemKind;
 }
 
 export const STEPS: StepConfig[] = [
@@ -155,11 +168,25 @@ distincts et segmentables.`,
     expectsBefore: ["01-market-research"],
     deliverableKind: "angles-promesses",
     memorySlug: "angles-promesses",
+    structuredKind: "angle",
     defaultPrompt: `À partir de l'ICP validée (memory/icp.md) et de la brand voice, produis
-le contenu complet de memory/angles-promesses.md selon le schéma.
+{count} angles marketing actionnables. Chaque angle est un item structuré
+individuellement validable : l'opérateur pourra valider, rejeter ou
+modifier chaque angle un par un.
+
+Diversité des leviers obligatoire (max 3 angles par levier). Couvre les
+3 ICP (au moins 2 angles chacun). Les hooks sont prêts à utiliser, pas
+des descriptions de hooks.
 
 Note particulière de cette session : {note}`,
     formFields: [
+      {
+        name: "count",
+        label: "Nombre d'angles à proposer",
+        type: "select",
+        options: ["6", "8", "10", "12"],
+        required: true,
+      },
       {
         name: "note",
         label: "Note d'orientation (optionnel)",
@@ -209,29 +236,39 @@ Budget de tests prévu : {budget}. Contraintes particulières : {contraintes}.`,
     tagline: "3 scripts (30s/60s/90s) + humanisation prompteur",
     gate: true,
     category: "pipeline",
-    expectsBefore: ["03-broad-mix"],
+    expectsBefore: ["02-angles-promesses"],
     deliverableKind: "founder-script",
-    defaultPrompt: `Rédige 3 variantes de script vidéo founder ads (30s, 60s, 90s) pour
-l'angle suivant : {angle}
+    structuredKind: "script",
+    defaultPrompt: `Rédige {scripts_per_angle} script(s) vidéo founder ads PAR ANGLE validé
+sélectionné (les angles complets sont fournis dans le contexte ci-dessous).
 
-ICP cible : {icp_target}
-Format : narration structurée plan par plan, 2-3 moments de pivot, CTA répété 2 fois.
+Durées cibles : {durations}
+Format de chaque script : narration structurée plan par plan, 2-3 moments
+de pivot, CTA répété 2 fois. Chaque script référence son angle d'origine
+via angle_ref (item_key EXACT).
 
 Note : après cette étape, lance "Humaniser le script (production-assistant)"
 pour la version prompteur.`,
     formFields: [
       {
-        name: "angle",
-        label: "Angle ciblé (slug de angles-promesses.md)",
-        type: "text",
-        placeholder: "Ex : fiscalite-claire",
+        name: "angles",
+        label: "Angles validés à décliner en scripts",
+        type: "items-select",
+        itemKind: "angle",
         required: true,
       },
       {
-        name: "icp_target",
-        label: "ICP cible (1, 2, 3 ou nom)",
+        name: "scripts_per_angle",
+        label: "Nombre de scripts par angle",
+        type: "select",
+        options: ["1", "2", "3"],
+        required: true,
+      },
+      {
+        name: "durations",
+        label: "Durées cibles",
         type: "text",
-        placeholder: "Ex : ICP 1",
+        placeholder: "Ex : 30s et 60s",
         required: true,
       },
     ],
@@ -245,17 +282,34 @@ pour la version prompteur.`,
     tagline: "10 concepts publicitaires (hook, sous-texte, prompt, légende)",
     gate: true,
     category: "pipeline",
-    expectsBefore: ["03-broad-mix"],
+    expectsBefore: ["02-angles-promesses"],
     deliverableKind: "image-concepts",
-    defaultPrompt: `Produis 10 concepts image publicitaires variés, en respectant la matrice
-du Broad Mix. Chaque concept inclut : ICP cible, levier, format, hook sur
+    structuredKind: "image-concept",
+    defaultPrompt: `Produis {count} concepts image publicitaires variés, rattachés aux
+angles validés sélectionnés (fournis dans le contexte ci-dessous via leur
+item_key). Chaque concept inclut : ICP cible, levier, format, hook sur
 l'image, sous-texte si pertinent, prompt visuel pour le générateur, légende
 Meta, CTA bouton, niveau funnel.
 
-Variation des leviers obligatoire (max 3 concepts par levier).
+Variation des leviers obligatoire (max 3 concepts par levier). Chaque
+concept référence son angle via angle_ref (item_key EXACT).
 
 Note particulière : {note}`,
     formFields: [
+      {
+        name: "angles",
+        label: "Angles validés à décliner",
+        type: "items-select",
+        itemKind: "angle",
+        required: true,
+      },
+      {
+        name: "count",
+        label: "Nombre de concepts",
+        type: "select",
+        options: ["6", "8", "10", "12"],
+        required: true,
+      },
       {
         name: "note",
         label: "Note (optionnel)",

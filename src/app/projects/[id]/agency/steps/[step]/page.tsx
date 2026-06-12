@@ -7,12 +7,19 @@ import {
   getNextStep,
   getPreviousStep,
   getStepPrefills,
+  listItemsForDeliverable,
+  listValidatedItems,
   type StepKey,
   type StepConfig,
+  type DeliverableItemRow,
+  type ItemKind,
 } from "@/lib/agency";
 import {
   launchStepAction,
   productionPassAction,
+  itemStatusAction,
+  regenerateItemAction,
+  addMoreItemsAction,
 } from "./actions";
 import {
   validateGateAction,
@@ -118,6 +125,33 @@ export default async function StepPage({
   for (const r of allStepsRes.data ?? []) {
     statusByStep.set(r.step_key as string, r.status as string);
   }
+
+  // P0.3 : items structurés du dernier livrable + options des items-select
+  const latestDeliverable = deliverables[0];
+  let stepItems: DeliverableItemRow[] = [];
+  if (step.structuredKind && latestDeliverable) {
+    stepItems = await listItemsForDeliverable(
+      supabase,
+      latestDeliverable.id as string
+    );
+  }
+  const itemsSelectOptions: Partial<
+    Record<ItemKind, DeliverableItemRow[]>
+  > = {};
+  for (const f of step.formFields ?? []) {
+    if (f.type === "items-select" && f.itemKind && !itemsSelectOptions[f.itemKind]) {
+      itemsSelectOptions[f.itemKind] = await listValidatedItems(supabase, {
+        projectId: id,
+        kind: f.itemKind,
+      });
+    }
+  }
+
+  // P0.3 / F8 : verrou soft — étapes amont attendues non validées
+  const blockedBy = (step.expectsBefore ?? []).filter((k) => {
+    const s = statusByStep.get(k);
+    return s !== "validated" && s !== "skipped";
+  });
 
   const nextStep = getNextStep(step.key);
   const prevStep = getPreviousStep(step.key);
@@ -256,7 +290,208 @@ export default async function StepPage({
         action={launch}
         disabled={status === "in_progress"}
         prefills={prefills}
+        itemsSelectOptions={itemsSelectOptions}
+        blockedBy={blockedBy}
       />
+
+      {/* ─── P0.3 : items structurés validables un par un ──────────────── */}
+      {step.structuredKind && stepItems.length > 0 && latestDeliverable && (
+        <section id="items" className="mt-10 scroll-mt-6">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold">
+              🧩 Items proposés ({stepItems.length})
+            </h2>
+            <div className="text-xs text-[var(--color-muted-foreground)]">
+              ✅{" "}
+              {stepItems.filter((i) => i.status === "validated").length}{" "}
+              validés · ❌{" "}
+              {stepItems.filter((i) => i.status === "rejected").length} rejetés
+              · ⏳{" "}
+              {stepItems.filter((i) => i.status === "proposed").length} en
+              attente
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+            Valide, rejette, régénère ou édite chaque item individuellement.
+            Les étapes en aval ne consomment QUE les items validés.
+          </p>
+
+          <div className="mt-4 grid gap-3">
+            {stepItems.map((it) => {
+              const itemStatusStyle =
+                it.status === "validated"
+                  ? "border-emerald-500/40"
+                  : it.status === "rejected"
+                    ? "border-red-500/30 opacity-60"
+                    : "border-[var(--color-border)]";
+              return (
+                <div
+                  key={it.id}
+                  className={`rounded-xl border bg-[var(--color-card)] p-4 ${itemStatusStyle}`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-semibold">{it.title}</h3>
+                        <span className="font-mono text-[10px] text-[var(--color-muted-foreground)]">
+                          {it.item_key}
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+                            it.status === "validated"
+                              ? "bg-emerald-500/15 text-emerald-300"
+                              : it.status === "rejected"
+                                ? "bg-red-500/15 text-red-300"
+                                : "bg-amber-500/15 text-amber-300"
+                          }`}
+                        >
+                          {it.status === "validated"
+                            ? "validé"
+                            : it.status === "rejected"
+                              ? "rejeté"
+                              : "proposé"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-1">
+                      {it.status !== "validated" && (
+                        <form
+                          action={itemStatusAction.bind(
+                            null,
+                            id,
+                            step.key,
+                            it.id,
+                            latestDeliverable.id as string,
+                            step.structuredKind!,
+                            "validated"
+                          )}
+                        >
+                          <SubmitButton
+                            pendingLabel="…"
+                            className="rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90"
+                          >
+                            ✅ Valider
+                          </SubmitButton>
+                        </form>
+                      )}
+                      {it.status !== "rejected" && (
+                        <form
+                          action={itemStatusAction.bind(
+                            null,
+                            id,
+                            step.key,
+                            it.id,
+                            latestDeliverable.id as string,
+                            step.structuredKind!,
+                            "rejected"
+                          )}
+                        >
+                          <SubmitButton
+                            pendingLabel="…"
+                            className="rounded-md border border-red-500/30 px-2.5 py-1 text-[11px] text-red-300 hover:bg-red-500/10"
+                          >
+                            ❌ Rejeter
+                          </SubmitButton>
+                        </form>
+                      )}
+                      {it.status !== "proposed" && (
+                        <form
+                          action={itemStatusAction.bind(
+                            null,
+                            id,
+                            step.key,
+                            it.id,
+                            latestDeliverable.id as string,
+                            step.structuredKind!,
+                            "proposed"
+                          )}
+                        >
+                          <SubmitButton
+                            pendingLabel="…"
+                            className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-[11px] hover:bg-[var(--color-accent)]"
+                          >
+                            ↺
+                          </SubmitButton>
+                        </form>
+                      )}
+                    </div>
+                  </div>
+
+                  <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-[var(--color-background)] p-3 text-[12px] leading-relaxed">
+                    {it.content_md}
+                  </pre>
+
+                  {/* Régénération ciblée */}
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-[11px] text-[var(--color-muted-foreground)]">
+                      🔄 Régénérer cet item (avec consigne)
+                    </summary>
+                    <form
+                      action={regenerateItemAction.bind(
+                        null,
+                        id,
+                        step.key,
+                        it.id
+                      )}
+                      className="mt-2 flex flex-wrap gap-2"
+                    >
+                      <input
+                        name="instruction"
+                        placeholder="Consigne (optionnel) — ex : plus pédagogue, moins de chiffres"
+                        className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-1.5 text-xs"
+                      />
+                      <SubmitButton
+                        pendingLabel="Régénération…"
+                        className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs hover:bg-[var(--color-accent)]"
+                      >
+                        🔄 Régénérer
+                      </SubmitButton>
+                    </form>
+                  </details>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Ajouter des items */}
+          <details className="mt-4 rounded-xl border border-dashed border-[var(--color-border)] p-4">
+            <summary className="cursor-pointer text-sm font-medium">
+              ➕ Proposer des items supplémentaires
+            </summary>
+            <form
+              action={addMoreItemsAction.bind(
+                null,
+                id,
+                step.key,
+                latestDeliverable.id as string
+              )}
+              className="mt-3 flex flex-wrap items-center gap-2"
+            >
+              <select
+                name="count"
+                defaultValue="3"
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+              >
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="5">5</option>
+              </select>
+              <input
+                name="instruction"
+                placeholder="Orientation (optionnel) — ex : axe social proof"
+                className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+              />
+              <SubmitButton
+                pendingLabel="Génération…"
+                className="rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-foreground)] hover:opacity-90"
+              >
+                ➕ Générer
+              </SubmitButton>
+            </form>
+          </details>
+        </section>
+      )}
 
       {/* Bonus pour étape 04 : pass production-assistant */}
       {step.key === "04-video-founder-ads" && deliverables.length > 0 && (
@@ -482,14 +717,19 @@ function LaunchForm({
   action,
   disabled,
   prefills,
+  itemsSelectOptions,
+  blockedBy,
 }: {
   step: StepConfig;
   action: (formData: FormData) => void | Promise<void>;
   disabled: boolean;
   prefills: Record<string, string>;
+  itemsSelectOptions: Partial<Record<ItemKind, DeliverableItemRow[]>>;
+  blockedBy: StepKey[];
 }) {
   if (!step.agentKey) return null;
   const hasPrefills = Object.values(prefills).some((v) => v && v.length > 0);
+  const isBlocked = blockedBy.length > 0;
   return (
     <section className="mt-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
       <h2 className="text-sm font-semibold">▶ Lancer l&apos;étape</h2>
@@ -498,6 +738,14 @@ function LaunchForm({
         mémoire client + sa mémoire long terme + son knowledge enrichi, et
         produit un livrable horodaté.
       </p>
+      {isBlocked && (
+        <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          ⚠ Étape(s) amont non validée(s) :{" "}
+          <span className="font-mono">{blockedBy.join(", ")}</span>. L&apos;agent
+          risque de travailler sur une mémoire incomplète. Tu peux quand même
+          lancer (le bouton le précise).
+        </div>
+      )}
       {hasPrefills && (
         <p className="mt-2 rounded-md border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 px-3 py-1.5 text-[11px] text-[var(--color-primary)]">
           ✨ Champs pré-remplis à partir de l&apos;onboarding et de la mémoire
@@ -507,6 +755,51 @@ function LaunchForm({
       <form action={action} className="mt-4 flex flex-col gap-3">
         {(step.formFields ?? []).map((f) => {
           const prefill = prefills[f.name] ?? "";
+          if (f.type === "items-select") {
+            const options = (f.itemKind && itemsSelectOptions[f.itemKind]) || [];
+            return (
+              <div key={f.name} className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                  {f.label}
+                  {f.required && <span className="ml-1 text-red-300">*</span>}
+                  <span className="ml-2 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-emerald-300">
+                    items validés uniquement
+                  </span>
+                </span>
+                {options.length === 0 ? (
+                  <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-300">
+                    Aucun item «&nbsp;{f.itemKind}&nbsp;» validé pour
+                    l&apos;instant. Valide d&apos;abord des items à l&apos;étape
+                    amont.
+                  </p>
+                ) : (
+                  <div className="grid gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3 sm:grid-cols-2">
+                    {options.map((opt) => (
+                      <label
+                        key={opt.id}
+                        className="flex cursor-pointer items-start gap-2 rounded-md p-1.5 text-sm hover:bg-[var(--color-accent)]"
+                      >
+                        <input
+                          type="checkbox"
+                          name={f.name}
+                          value={opt.id}
+                          className="mt-0.5"
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">
+                            {opt.title}
+                          </span>
+                          <span className="block truncate font-mono text-[10px] text-[var(--color-muted-foreground)]">
+                            {opt.item_key}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          }
           return (
             <label key={f.name} className="flex flex-col gap-1">
               <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
@@ -576,9 +869,13 @@ function LaunchForm({
           <SubmitButton
             disabled={disabled}
             pendingLabel="Agent en cours…"
-            className="rounded-md bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`rounded-md px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${
+              isBlocked
+                ? "border border-amber-500/40 bg-amber-500/15 text-amber-300"
+                : "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+            }`}
           >
-            ▶ Lancer
+            {isBlocked ? "⚠ Lancer quand même" : "▶ Lancer"}
           </SubmitButton>
         </div>
       </form>

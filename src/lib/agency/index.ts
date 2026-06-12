@@ -43,3 +43,22 @@ export type {
   DeliverableVersionRow,
   VersionSource,
 } from "./deliverable-versions";
+export {
+  insertItems,
+  listItemsForDeliverable,
+  listValidatedItems,
+  setItemStatus,
+  updateItemContent,
+  rerenderDeliverableFromItems,
+  renderItemMd,
+  renderDeliverableMd,
+  ITEM_SCHEMAS,
+} from "./items";
+export type { ItemKind, ItemStatus, DeliverableItemRow } from "./items";
+export {
+  buildStructuredInstruction,
+  parseItemsOutput,
+  processStructuredOutput,
+  regenerateSingleItem,
+  generateMoreItems,
+} from "./structured-generation";
