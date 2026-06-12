@@ -28,3 +28,7 @@ export {
 } from "./documents";
 export type { ClientDocumentRow } from "./documents";
 export { getStepPrefills } from "./prefill";
+export {
+  applyDeliverableToMemory,
+  cleanDeliverableForMemory,
+} from "./memory-apply";

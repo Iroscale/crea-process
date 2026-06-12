@@ -107,10 +107,10 @@ export default async function OnboardingPage({
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
-              href={`/projects/${id}/agency/memory/client-profile`}
+              href={`/projects/${id}/agency/steps/onboarding/apply`}
               className="rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-foreground)] hover:opacity-90"
             >
-              📝 Appliquer à client-profile.md
+              📝 Appliquer à client-profile.md (preview diff)
             </Link>
             <Link
               href={`/projects/${id}/agency/steps/01-market-research`}

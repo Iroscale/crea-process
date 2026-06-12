@@ -20,7 +20,9 @@ interface AgentStats {
   skillsMissing: string[];
 }
 
-const AGENT_LABELS: Record<AgentKey, { title: string; tagline: string }> = {
+// Record<string, …> volontairement : tolère les agents ajoutés au registre
+// (ex: module motion-design) sans casser le build ; fallback dans le rendu.
+const AGENT_LABELS: Record<string, { title: string; tagline: string }> = {
   orchestrator: {
     title: "Orchestrator",
     tagline: "Ingère l'onboarding, route, gère les gates",
@@ -176,7 +178,10 @@ export default async function AgentsIndexPage({
 
       <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((s) => {
-          const label = AGENT_LABELS[s.key];
+          const label = AGENT_LABELS[s.key] ?? {
+            title: s.key,
+            tagline: "",
+          };
           return (
             <Link
               key={s.key}

@@ -195,28 +195,58 @@ export default async function StepPage({
             le client (Loom envoyé), ajoute une note, puis clique le bouton de
             ton choix.
           </p>
-          <form action={validateContinue} className="mt-4 flex flex-wrap gap-2">
-            <input
-              name="notes"
-              placeholder="Note de validation (optionnel — points OK, Loom envoyé, etc.)"
-              className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
-            />
-            <SubmitButton
-              pendingLabel="Validation…"
-              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-            >
-              ✅ Valider & continuer{nextStep ? ` → ${nextStep.title}` : ""}
-            </SubmitButton>
-          </form>
-          <form action={validate} className="mt-2 flex justify-end">
-            <input type="hidden" name="notes" value="" />
-            <SubmitButton
-              pendingLabel="Validation…"
-              className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
-            >
-              Valider sans changer de page
-            </SubmitButton>
-          </form>
+          {step.memorySlug ? (
+            <>
+              {/* Étape qui alimente la mémoire : on passe par le preview diff */}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Link
+                  href={`/projects/${id}/agency/steps/${step.key}/apply`}
+                  className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+                >
+                  ✅ Valider &amp; appliquer à la mémoire{" "}
+                  <span className="font-mono">{step.memorySlug}</span> →
+                </Link>
+                <p className="text-[11px] text-[var(--color-muted-foreground)]">
+                  Preview diff avant application — les étapes aval liront
+                  cette mémoire.
+                </p>
+              </div>
+              <form action={validateContinue} className="mt-3 flex justify-end gap-2">
+                <input type="hidden" name="notes" value="validé sans application mémoire" />
+                <SubmitButton
+                  pendingLabel="Validation…"
+                  className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
+                >
+                  Valider sans appliquer
+                </SubmitButton>
+              </form>
+            </>
+          ) : (
+            <>
+              <form action={validateContinue} className="mt-4 flex flex-wrap gap-2">
+                <input
+                  name="notes"
+                  placeholder="Note de validation (optionnel — points OK, Loom envoyé, etc.)"
+                  className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+                />
+                <SubmitButton
+                  pendingLabel="Validation…"
+                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+                >
+                  ✅ Valider & continuer{nextStep ? ` → ${nextStep.title}` : ""}
+                </SubmitButton>
+              </form>
+              <form action={validate} className="mt-2 flex justify-end">
+                <input type="hidden" name="notes" value="" />
+                <SubmitButton
+                  pendingLabel="Validation…"
+                  className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
+                >
+                  Valider sans changer de page
+                </SubmitButton>
+              </form>
+            </>
+          )}
         </section>
       )}
 

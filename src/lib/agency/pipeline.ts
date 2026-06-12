@@ -9,7 +9,7 @@
  * ou être construit en remplaçant les variables {var} dans defaultPrompt
  * par les valeurs saisies dans le formulaire.
  */
-import type { AgentKey } from "@/lib/agents";
+import type { AgentKey, MemorySlug } from "@/lib/agents";
 
 export type StepKey =
   | "onboarding"
@@ -57,6 +57,14 @@ export interface StepConfig {
   }>;
   /** Type du livrable produit (pour le champ deliverables.kind). */
   deliverableKind: string;
+  /**
+   * Fichier mémoire client alimenté par le livrable validé de cette étape.
+   * À la validation du gate, l'opérateur peut appliquer le livrable dans
+   * client_memory[memorySlug] (preview diff + snapshot historique).
+   * null/absent = le livrable ne va pas en mémoire (consommé via la couche
+   * items structurés en aval).
+   */
+  memorySlug?: MemorySlug;
 }
 
 export const STEPS: StepConfig[] = [
@@ -71,6 +79,7 @@ export const STEPS: StepConfig[] = [
     gate: false,
     category: "onboarding",
     deliverableKind: "client-profile",
+    memorySlug: "client-profile",
     defaultPrompt: `Intention : ingest-onboarding.
 
 # Bloc onboarding fourni par l'équipe
@@ -106,6 +115,7 @@ Tu produis :
     category: "pipeline",
     expectsBefore: ["onboarding"],
     deliverableKind: "icp",
+    memorySlug: "icp",
     defaultPrompt: `Niche / sujet à creuser : {niche}
 Région cible : {region}
 
@@ -144,6 +154,7 @@ distincts et segmentables.`,
     category: "pipeline",
     expectsBefore: ["01-market-research"],
     deliverableKind: "angles-promesses",
+    memorySlug: "angles-promesses",
     defaultPrompt: `À partir de l'ICP validée (memory/icp.md) et de la brand voice, produis
 le contenu complet de memory/angles-promesses.md selon le schéma.
 
