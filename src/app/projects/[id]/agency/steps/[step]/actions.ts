@@ -476,3 +476,100 @@ issues détaillées avec références normatives, version corrigée intégrale).
     )}`
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// P1.2 — Génération du visuel d'un item image-concept validé
+// ─────────────────────────────────────────────────────────────────────────
+/**
+ * Réutilise la couche de génération d'images du flow créa (runModel :
+ * fal.ai / Gemini unifiés) pour produire le visuel d'un concept validé.
+ * L'image est stockée dans le bucket 'generated' et son chemin attaché
+ * à l'item (structured.generated_images[]).
+ */
+export async function generateConceptImageAction(
+  projectId: string,
+  stepKey: StepKey,
+  itemId: string,
+  formData: FormData
+): Promise<void> {
+  const { supabase, userId } = await loadUserOr401();
+  const modelId = String(formData.get("model") ?? "gemini-2.5-flash-image");
+
+  const { data: item } = await supabase
+    .from("deliverable_items")
+    .select("id, item_key, kind, structured, deliverable_id")
+    .eq("id", itemId)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (!item || item.kind !== "image-concept") {
+    redirect(
+      `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
+        "Item concept introuvable"
+      )}`
+    );
+  }
+  const structured = (item.structured ?? {}) as Record<string, unknown>;
+  const visualPrompt = String(structured.visual_prompt ?? "").trim();
+  if (!visualPrompt) {
+    redirect(
+      `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
+        "Pas de prompt visuel sur ce concept"
+      )}`
+    );
+  }
+
+  // Prompt final : prompt visuel + hook à intégrer sur l'image
+  const hook = String(structured.hook_on_image ?? "").trim();
+  const prompt = hook
+    ? `${visualPrompt}\n\nTexte principal à intégrer lisiblement sur le visuel (français) : « ${hook} »`
+    : visualPrompt;
+
+  const { runModel } = await import("@/lib/fal");
+  const result = await runModel(modelId, prompt);
+  if (!result.ok) {
+    redirect(
+      `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
+        `Génération image échouée : ${result.error}`
+      )}`
+    );
+  }
+
+  // Stockage dans le bucket 'generated' (même bucket que le flow créa)
+  const ext = result.mimeType?.includes("jpeg") ? "jpg" : "png";
+  const path = `agency/${projectId}/${item.item_key}-${Date.now()}.${ext}`;
+  const { error: upErr } = await supabase.storage
+    .from("generated")
+    .upload(path, result.bytes, {
+      contentType: result.mimeType ?? "image/png",
+      upsert: false,
+    });
+  if (upErr) {
+    redirect(
+      `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
+        `Upload image échoué : ${upErr.message}`
+      )}`
+    );
+  }
+
+  // Attache le chemin à l'item (historique des générations)
+  const prev = Array.isArray(structured.generated_images)
+    ? (structured.generated_images as string[])
+    : [];
+  await supabase
+    .from("deliverable_items")
+    .update({
+      structured: {
+        ...structured,
+        generated_images: [...prev, path],
+      },
+    })
+    .eq("id", itemId)
+    .eq("user_id", userId);
+
+  revalidatePath(`/projects/${projectId}/agency/steps/${stepKey}`);
+  redirect(
+    `/projects/${projectId}/agency/steps/${stepKey}?ok=${encodeURIComponent(
+      "Visuel généré et attaché au concept"
+    )}#items`
+  );
+}

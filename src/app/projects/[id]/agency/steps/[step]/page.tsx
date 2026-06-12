@@ -21,7 +21,16 @@ import {
   regenerateItemAction,
   addMoreItemsAction,
   complianceCheckStepAction,
+  generateConceptImageAction,
 } from "./actions";
+
+/** Modèles de génération d'images proposés (P1.2 — réutilise le flow créa). */
+const IMAGE_MODELS = [
+  { id: "gemini-2.5-flash-image", label: "Gemini Flash (rapide)" },
+  { id: "gemini-3-pro-image", label: "Gemini 3 Pro (qualité)" },
+  { id: "gpt-image-1", label: "GPT Image" },
+  { id: "flux-pro-1.1", label: "Flux Pro 1.1" },
+];
 
 /** Étapes copy : un check conformité est proposé après production. */
 const COMPLIANCE_STEPS: StepKey[] = [
@@ -152,6 +161,24 @@ export default async function StepPage({
       supabase,
       latestDeliverable.id as string
     );
+  }
+
+  // P1.2 : signed URLs des visuels générés sur les items image-concept
+  const generatedImageUrls = new Map<string, string>();
+  if (step.structuredKind === "image-concept") {
+    const allPaths = stepItems.flatMap((it) => {
+      const imgs = (it.structured as { generated_images?: string[] } | null)
+        ?.generated_images;
+      return Array.isArray(imgs) ? imgs : [];
+    });
+    if (allPaths.length > 0) {
+      const { data: signed } = await supabase.storage
+        .from("generated")
+        .createSignedUrls(Array.from(new Set(allPaths)), 60 * 60);
+      for (const s of signed ?? []) {
+        if (s.path && s.signedUrl) generatedImageUrls.set(s.path, s.signedUrl);
+      }
+    }
   }
   const itemsSelectOptions: Partial<
     Record<ItemKind, DeliverableItemRow[]>
@@ -452,6 +479,70 @@ export default async function StepPage({
                   <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-[var(--color-background)] p-3 text-[12px] leading-relaxed">
                     {it.content_md}
                   </pre>
+
+                  {/* P1.2 : génération du visuel (concepts image validés) */}
+                  {it.kind === "image-concept" && (
+                    <div className="mt-2">
+                      {(() => {
+                        const imgs =
+                          (it.structured as {
+                            generated_images?: string[];
+                          } | null)?.generated_images ?? [];
+                        return imgs.length > 0 ? (
+                          <div className="mb-2 flex flex-wrap gap-2">
+                            {imgs.map((p) => {
+                              const url = generatedImageUrls.get(p);
+                              return url ? (
+                                <a
+                                  key={p}
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={url}
+                                    alt={it.title}
+                                    className="h-32 w-32 rounded-lg border border-[var(--color-border)] object-cover transition hover:opacity-80"
+                                  />
+                                </a>
+                              ) : null;
+                            })}
+                          </div>
+                        ) : null;
+                      })()}
+                      {it.status === "validated" && (
+                        <form
+                          action={generateConceptImageAction.bind(
+                            null,
+                            id,
+                            step.key,
+                            it.id
+                          )}
+                          className="flex flex-wrap items-center gap-2"
+                        >
+                          <select
+                            name="model"
+                            defaultValue="gemini-2.5-flash-image"
+                            className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-1.5 text-xs"
+                          >
+                            {IMAGE_MODELS.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.label}
+                              </option>
+                            ))}
+                          </select>
+                          <SubmitButton
+                            pendingLabel="Génération (20-60s)…"
+                            className="rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-foreground)] hover:opacity-90"
+                          >
+                            🎨 Générer le visuel
+                          </SubmitButton>
+                        </form>
+                      )}
+                    </div>
+                  )}
 
                   {/* Régénération ciblée */}
                   <details className="mt-2">
