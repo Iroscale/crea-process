@@ -67,7 +67,9 @@ export async function uploadDocument(
     .replace(/_{2,}/g, "_")
     .slice(0, 120);
   const ts = Date.now();
-  const path = `${projectId}/${ts}-${safeName}`;
+  // Le premier segment du path DOIT être l'uid (policies RLS Storage,
+  // pattern identique aux buckets knowledge/inspirations/generated).
+  const path = `${userId}/${projectId}/${ts}-${safeName}`;
 
   // Upload vers Storage
   const buffer = Buffer.from(await file.arrayBuffer());

@@ -534,9 +534,10 @@ export async function generateConceptImageAction(
     );
   }
 
-  // Stockage dans le bucket 'generated' (même bucket que le flow créa)
+  // Stockage dans le bucket 'generated' (même bucket que le flow créa).
+  // Le premier segment du path DOIT être l'uid (policy RLS Storage).
   const ext = result.mimeType?.includes("jpeg") ? "jpg" : "png";
-  const path = `agency/${projectId}/${item.item_key}-${Date.now()}.${ext}`;
+  const path = `${userId}/agency/${projectId}/${item.item_key}-${Date.now()}.${ext}`;
   const { error: upErr } = await supabase.storage
     .from("generated")
     .upload(path, result.bytes, {
