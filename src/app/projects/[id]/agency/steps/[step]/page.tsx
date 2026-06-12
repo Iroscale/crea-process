@@ -161,6 +161,27 @@ export default async function StepPage({
       supabase,
       latestDeliverable.id as string
     );
+    // Après une relance d'étape, les items VALIDÉS des runs précédents
+    // restent consommables par les étapes aval (multi-select) : on les
+    // affiche aussi ici pour qu'ils restent visibles et révocables
+    // (sinon impossible de rejeter un item validé d'un ancien run).
+    const { data: priorValidated } = await supabase
+      .from("deliverable_items")
+      .select("*")
+      .eq("project_id", id)
+      .eq("kind", step.structuredKind)
+      .eq("status", "validated")
+      .neq("deliverable_id", latestDeliverable.id as string)
+      .order("position", { ascending: true });
+    if (priorValidated?.length) {
+      const seen = new Set(stepItems.map((i) => i.item_key));
+      stepItems = [
+        ...stepItems,
+        ...(priorValidated as DeliverableItemRow[]).filter(
+          (i) => !seen.has(i.item_key)
+        ),
+      ];
+    }
   }
 
   // P1.2 : signed URLs des visuels générés sur les items image-concept

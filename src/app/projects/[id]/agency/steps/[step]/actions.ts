@@ -207,6 +207,17 @@ export async function launchStepAction(
         result.status === "done" &&
         result.deliverableId
       ) {
+        // Relance d'étape : les items encore 'proposed' des runs précédents
+        // sont archivés — seules les décisions humaines (validated/rejected)
+        // survivent. Sans ça, les anciens proposed pollueraient le projet.
+        await supabase
+          .from("deliverable_items")
+          .update({ status: "archived" })
+          .eq("project_id", projectId)
+          .eq("kind", structuredKind)
+          .eq("status", "proposed")
+          .neq("deliverable_id", result.deliverableId);
+
         const structured = await processStructuredOutput(supabase, {
           userId,
           projectId,

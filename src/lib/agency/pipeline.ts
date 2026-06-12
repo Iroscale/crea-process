@@ -136,7 +136,9 @@ Tu produis :
     expectsBefore: ["onboarding"],
     deliverableKind: "icp",
     memorySlug: "icp",
-    maxTokens: 12000,
+    // 12k tronquait les ICP riches (vu en test E2E LuxAccess) — 20k laisse
+    // la place aux 3 ICP + verbatims + veille + section Validation requise.
+    maxTokens: 20000,
     defaultPrompt: `Niche / sujet à creuser : {niche}
 Région cible : {region}
 
