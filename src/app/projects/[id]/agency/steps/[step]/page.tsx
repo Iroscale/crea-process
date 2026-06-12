@@ -20,7 +20,17 @@ import {
   itemStatusAction,
   regenerateItemAction,
   addMoreItemsAction,
+  complianceCheckStepAction,
 } from "./actions";
+
+/** Étapes copy : un check conformité est proposé après production. */
+const COMPLIANCE_STEPS: StepKey[] = [
+  "04-video-founder-ads",
+  "04b-primary-texts",
+  "05-image-concepts",
+  "06-landing-page",
+  "07-quiz-funnel",
+];
 import {
   validateGateAction,
   validateAndContinueAction,
@@ -66,7 +76,7 @@ export default async function StepPage({
   searchParams,
 }: {
   params: Promise<{ id: string; step: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; ok?: string }>;
 }) {
   const { id, step: stepKeyParam } = await params;
   const sp = await searchParams;
@@ -215,6 +225,11 @@ export default async function StepPage({
       {sp.error && (
         <div className="mt-6 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
           {decodeURIComponent(sp.error)}
+        </div>
+      )}
+      {sp.ok && (
+        <div className="mt-6 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+          {decodeURIComponent(sp.ok)}
         </div>
       )}
 
@@ -507,6 +522,30 @@ export default async function StepPage({
               </SubmitButton>
             </form>
           </details>
+        </section>
+      )}
+
+      {/* P1.4 : check conformité sur le livrable de l'étape (étapes copy) */}
+      {COMPLIANCE_STEPS.includes(step.key) && deliverables.length > 0 && (
+        <section className="mt-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">⚖️ Conformité ACPR/AMF</h2>
+              <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+                Lance legal-compliance (Opus) sur le dernier livrable — le
+                rapport (verdict + corrections) sera attaché ci-dessous.
+                Recommandé avant diffusion, jamais bloquant.
+              </p>
+            </div>
+            <form action={complianceCheckStepAction.bind(null, id, step.key)}>
+              <SubmitButton
+                pendingLabel="Vérification (20-60s)…"
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-4 py-2 text-sm hover:bg-[var(--color-accent)]"
+              >
+                ⚖️ Vérifier la conformité
+              </SubmitButton>
+            </form>
+          </div>
         </section>
       )}
 

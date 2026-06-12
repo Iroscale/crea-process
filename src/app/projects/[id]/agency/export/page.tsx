@@ -11,10 +11,13 @@ import AgencyNav from "../_components/agency-nav";
 
 export default async function ExportPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -30,6 +33,13 @@ export default async function ExportPage({
 
   const profile = await isAgencyActivated(supabase, id);
   if (!profile) redirect(`/projects/${id}/agency`);
+
+  // P1.1 : compteur de livrables exportables (pack client)
+  const { count: validatedCount } = await supabase
+    .from("deliverables")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", id)
+    .in("status", ["validated", "delivered"]);
 
   const { data: rows } = await supabase
     .from("client_memory")
@@ -50,11 +60,47 @@ export default async function ExportPage({
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-6 py-12">
       <AgencyNav projectId={id} projectName={project.name} active="/export" />
-      <h1 className="text-3xl font-semibold">📤 Export mémoire</h1>
+      <h1 className="text-3xl font-semibold">📤 Exports</h1>
       <p className="mt-2 max-w-2xl text-sm text-[var(--color-muted-foreground)]">
-        Télécharge les 7 fichiers concaténés en un seul markdown portable.
-        Versionnable, copiable, ré-importable plus tard.
+        Pack client (livrables validés) ou mémoire complète — markdown
+        portable, versionnable, copiable.
       </p>
+
+      {sp.error && (
+        <div className="mt-6 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+          {decodeURIComponent(sp.error)}
+        </div>
+      )}
+
+      {/* P1.1 — Pack client */}
+      <section className="mt-8 rounded-xl border-2 border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--color-primary)]">
+              📦 Pack client — livrables validés
+            </h2>
+            <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+              Assemble UNIQUEMENT les livrables validés (gates passés), dans
+              l&apos;ordre du pipeline, avec page de garde et sommaire. Les
+              livrables exportés passent en statut « delivered ».
+            </p>
+            <p className="mt-1 text-xs">
+              <strong>{validatedCount ?? 0}</strong> livrable(s) exportable(s)
+            </p>
+          </div>
+          <a
+            href={`/projects/${id}/agency/export/pack`}
+            className={`rounded-md px-4 py-2 text-sm font-semibold ${
+              (validatedCount ?? 0) > 0
+                ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)] hover:opacity-90"
+                : "cursor-not-allowed border border-[var(--color-border)] text-[var(--color-muted-foreground)] opacity-60"
+            }`}
+            download
+          >
+            ⬇ Télécharger le pack client
+          </a>
+        </div>
+      </section>
 
       <section className="mt-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
         <h2 className="text-sm font-semibold">Sommaire</h2>

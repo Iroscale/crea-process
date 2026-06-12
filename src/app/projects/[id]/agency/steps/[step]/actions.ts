@@ -390,3 +390,89 @@ export async function addMoreItemsAction(
   revalidatePath(`/projects/${projectId}/agency/steps/${stepKey}`);
   redirect(`/projects/${projectId}/agency/steps/${stepKey}#items`);
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// P1.4 — Check de conformité intégré au flux
+// ─────────────────────────────────────────────────────────────────────────
+/**
+ * Lance legal-compliance sur le dernier livrable de l'étape et attache le
+ * rapport comme deliverable kind 'compliance-report' (lié par
+ * parent_deliverable_id). Disponible sur les étapes copy après production.
+ */
+export async function complianceCheckStepAction(
+  projectId: string,
+  stepKey: StepKey
+): Promise<void> {
+  const { supabase, userId } = await loadUserOr401();
+
+  const { data: deliv } = await supabase
+    .from("deliverables")
+    .select("id, title, content_md, kind")
+    .eq("project_id", projectId)
+    .eq("step_key", stepKey)
+    .neq("status", "archived")
+    .neq("kind", "compliance-report")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!deliv) {
+    redirect(
+      `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
+        "Aucun livrable à vérifier sur cette étape"
+      )}`
+    );
+  }
+
+  const task = `Asset à vérifier (livrable de l'étape ${stepKey}).
+
+## Type : ${deliv.kind}
+## Titre : ${deliv.title}
+
+## Contenu
+
+${deliv.content_md}
+
+Rends ton verdict selon le format imposé (✅ ok / ⚠️ partial / ❌ nok,
+issues détaillées avec références normatives, version corrigée intégrale).`;
+
+  const result = await runAgent({
+    supabase,
+    userId,
+    projectId,
+    agentKey: "legal-compliance",
+    stepKey: "compliance-check",
+    task,
+    updatePipelineStep: false,
+    includeClientDocuments: false,
+    deliverable: {
+      kind: "compliance-report",
+      title: `⚖️ Conformité — ${deliv.title}`,
+    },
+  });
+
+  if (result.status === "failed") {
+    redirect(
+      `/projects/${projectId}/agency/steps/${stepKey}?error=${encodeURIComponent(
+        result.errorMessage ?? "Erreur legal-compliance"
+      )}`
+    );
+  }
+
+  // Lie le rapport au livrable vérifié
+  if (result.deliverableId) {
+    await supabase
+      .from("deliverables")
+      .update({
+        parent_deliverable_id: deliv.id,
+        step_key: stepKey, // le rapport vit sur la même étape pour l'UI
+      })
+      .eq("id", result.deliverableId);
+  }
+
+  revalidatePath(`/projects/${projectId}/agency/steps/${stepKey}`);
+  redirect(
+    `/projects/${projectId}/agency/steps/${stepKey}?ok=${encodeURIComponent(
+      "Rapport de conformité attaché au livrable"
+    )}`
+  );
+}
