@@ -42,7 +42,16 @@ next-env.d.ts
 # logs locaux
 .dev-server.log
 
+# fichiers temporaires d'editeurs / outils
+*.tmp.*
+
 # scripts personnels / test artefacts
 /tmp/
 /tmp-*/
 /.cache/
+
+# motion design — workspaces de rendu Remotion générés à la volée (contiennent
+# leurs propres node_modules dupliqués, plusieurs centaines de Mo). Ne PAS
+# committer.
+/.motion-render-workspaces/
+/motion-templates/node_modules/

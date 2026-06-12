@@ -1,13 +1,12 @@
 /**
  * Agent loader — lit les fichiers `.claude/agents/<name>.md` et le préambule
- * commun `.claude/agency-os.system.md`. Parse le frontmatter YAML minimal
- * (clés simples, listes inline) et retourne un `AgentDefinition` exploitable
+ * commun `.claude/agency-os.system.md`. Parse le frontmatter YAML via
+ * `gray-matter` (js-yaml) et retourne un `AgentDefinition` exploitable
  * par le serveur.
  *
- * Pourquoi un parseur maison plutôt que `gray-matter` / `yaml` :
- * - notre frontmatter est volontairement contraint (clés string, listes
- *   simples) → 60 lignes suffisent.
- * - 0 dépendance supplémentaire.
+ * P1.5 : le parseur YAML maison a été remplacé par gray-matter — fiabilité
+ * critique car tous les agents en dépendent (le parseur maison était
+ * fragile sur l'indentation et les valeurs contenant `:`).
  *
  * Les fichiers sont lus depuis `process.cwd()` (root du projet en dev comme
  * en prod Next.js standalone). Cache mémoire LRU minimal (5min TTL) pour
@@ -15,6 +14,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import matter from "gray-matter";
 import type { AgentKey } from "./model-routing";
 
 export interface AgentFrontmatter {
@@ -53,121 +53,23 @@ function isFresh<T>(entry: CacheEntry<T> | null | undefined): entry is CacheEntr
   return !!entry && entry.expiresAt > Date.now();
 }
 
-// ── Frontmatter parser (minimal, opinionated) ─────────────────────────────
-/**
- * Parse un bloc frontmatter YAML restreint :
- *   ---
- *   name: market-research
- *   model: claude-opus-4-8
- *   tools: [web_search, web_fetch]
- *   reads:
- *     - memory/client-profile.md
- *     - onboarding_data
- *   writes: [memory/icp.md]
- *   skill: icp-creative-strategy
- *   gate: true
- *   escalation_to: ~
- *   description: |
- *     Description multi-lignes possible.
- *   ---
- */
+// ── Frontmatter parser (gray-matter / js-yaml) ────────────────────────────
 function parseFrontmatter(src: string): {
   frontmatter: Record<string, unknown>;
   body: string;
 } {
   const trimmed = src.replace(/^﻿/, "");
-  if (!trimmed.startsWith("---")) {
+  try {
+    const parsed = matter(trimmed);
+    return {
+      frontmatter: (parsed.data ?? {}) as Record<string, unknown>,
+      body: parsed.content.replace(/^\n/, ""),
+    };
+  } catch {
+    // YAML invalide : on retourne le fichier entier comme body — l'agent
+    // reste utilisable avec les valeurs par défaut du frontmatter.
     return { frontmatter: {}, body: trimmed };
   }
-  const endIdx = trimmed.indexOf("\n---", 3);
-  if (endIdx === -1) {
-    return { frontmatter: {}, body: trimmed };
-  }
-  const fmText = trimmed.slice(3, endIdx).replace(/^\n/, "");
-  const body = trimmed.slice(endIdx + 4).replace(/^\n/, "");
-  const fm = parseYamlSubset(fmText);
-  return { frontmatter: fm, body };
-}
-
-function parseYamlSubset(text: string): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  const lines = text.split(/\r?\n/);
-  let i = 0;
-  while (i < lines.length) {
-    const raw = lines[i];
-    if (!raw.trim() || raw.trim().startsWith("#")) {
-      i++;
-      continue;
-    }
-    const m = raw.match(/^([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
-    if (!m) {
-      i++;
-      continue;
-    }
-    const key = m[1];
-    const rest = m[2];
-    if (rest === "" || rest === "|") {
-      // bloc multi-lignes (|) ou liste sur lignes suivantes
-      const indent = / {2,}/;
-      const collected: string[] = [];
-      i++;
-      while (i < lines.length) {
-        const next = lines[i];
-        if (next.trim() === "") {
-          collected.push("");
-          i++;
-          continue;
-        }
-        if (next.startsWith("  - ")) {
-          collected.push(next.replace(/^\s*-\s*/, "ITEM::"));
-          i++;
-          continue;
-        }
-        if (indent.test(next)) {
-          collected.push(next.replace(/^ {2}/, ""));
-          i++;
-          continue;
-        }
-        break;
-      }
-      if (collected.every((c) => c === "" || c.startsWith("ITEM::"))) {
-        out[key] = collected
-          .filter((c) => c.startsWith("ITEM::"))
-          .map((c) => coerceScalar(c.slice(6).trim()));
-      } else {
-        out[key] = collected.join("\n").trim();
-      }
-      // Le while interne a déjà avancé `i` jusqu'à la prochaine ligne
-      // non-indentée : on NE FAIT PAS i++ ici sinon on saute cette clé.
-      continue;
-    } else {
-      out[key] = parseInlineValue(rest);
-    }
-    i++;
-  }
-  return out;
-}
-
-function parseInlineValue(raw: string): unknown {
-  const v = raw.trim();
-  if (v.startsWith("[") && v.endsWith("]")) {
-    return v
-      .slice(1, -1)
-      .split(",")
-      .map((x) => coerceScalar(x.trim()))
-      .filter((x) => x !== "");
-  }
-  return coerceScalar(v);
-}
-
-function coerceScalar(v: string): string | number | boolean | null {
-  if (v === "" || v === "~" || v === "null") return null;
-  if (v === "true") return true;
-  if (v === "false") return false;
-  if (/^-?\d+$/.test(v)) return Number(v);
-  if (/^-?\d+\.\d+$/.test(v)) return Number(v);
-  // strip surrounding quotes
-  return v.replace(/^['"]|['"]$/g, "");
 }
 
 // ── Public API ────────────────────────────────────────────────────────────
