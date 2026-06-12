@@ -8,6 +8,7 @@ import {
   STEP_BY_KEY,
   getNextStep,
   applyDeliverableToMemory,
+  markStepDeliverableValidated,
   type StepKey,
 } from "@/lib/agency";
 
@@ -63,6 +64,8 @@ export async function validateGateAction(
     })
     .eq("project_id", projectId)
     .eq("step_key", stepKey);
+  // P0.4 : le livrable courant de l'étape passe en 'validated'
+  await markStepDeliverableValidated(supabase, { projectId, stepKey });
   revalidatePath(`/projects/${projectId}/agency`);
   redirect(`/projects/${projectId}/agency`);
 }
@@ -135,6 +138,9 @@ export async function validateApplyAndContinueAction(
     .eq("project_id", projectId)
     .eq("step_key", stepKey);
 
+  // P0.4 : le livrable appliqué passe en 'validated'
+  await markStepDeliverableValidated(supabase, { projectId, stepKey });
+
   revalidatePath(`/projects/${projectId}/agency`);
   revalidatePath(`/projects/${projectId}/agency/memory`);
 
@@ -183,6 +189,8 @@ export async function validateAndContinueAction(
     })
     .eq("project_id", projectId)
     .eq("step_key", stepKey);
+  // P0.4 : le livrable courant de l'étape passe en 'validated'
+  await markStepDeliverableValidated(supabase, { projectId, stepKey });
   revalidatePath(`/projects/${projectId}/agency`);
   const next = getNextStep(stepKey);
   if (!next) {

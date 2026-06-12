@@ -298,8 +298,17 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
   const costUsd = estimateCost(model, usage);
 
   // ─── Persiste le deliverable si demandé ──────────────────────────────────
+  // P0.4 : une relance d'étape archive le livrable précédent et le nouveau
+  // garde le lineage via parent_deliverable_id.
   let deliverableId: string | undefined;
   if (deliverable && text) {
+    const { archivePreviousDeliverable } = await import(
+      "../agency/deliverable-versions"
+    );
+    const parentId = await archivePreviousDeliverable(supabase, {
+      projectId,
+      stepKey,
+    });
     const { data: delivRow, error: delivErr } = await supabase
       .from("deliverables")
       .insert({
@@ -313,6 +322,9 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
         structured: deliverable.structured ?? null,
         file_paths: deliverable.filePaths ?? null,
         run_id: runId,
+        version: 1,
+        status: "draft",
+        parent_deliverable_id: parentId,
       })
       .select("id")
       .single();

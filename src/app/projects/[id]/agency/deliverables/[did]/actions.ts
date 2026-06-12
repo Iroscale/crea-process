@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import {
+  updateDeliverableVersioned,
+  restoreDeliverableVersion,
+} from "@/lib/agency";
 
 async function loadUserOr401() {
   const supabase = await createClient();
@@ -18,17 +22,45 @@ export async function saveDeliverableAction(
   deliverableId: string,
   formData: FormData
 ): Promise<void> {
-  const { supabase } = await loadUserOr401();
+  const { supabase, userId } = await loadUserOr401();
   const contentMd = String(formData.get("content_md") ?? "");
   const title = String(formData.get("title") ?? "").trim();
-  await supabase
-    .from("deliverables")
-    .update({
-      content_md: contentMd,
-      ...(title ? { title } : {}),
-    })
-    .eq("id", deliverableId)
-    .eq("project_id", projectId);
+
+  // P0.4 : snapshot de l'ancienne version puis version++
+  const res = await updateDeliverableVersioned(supabase, {
+    userId,
+    deliverableId,
+    newContentMd: contentMd,
+    newTitle: title || undefined,
+    source: "manual",
+  });
+  if ("error" in res) {
+    redirect(
+      `/projects/${projectId}/agency/deliverables/${deliverableId}?error=${encodeURIComponent(res.error)}`
+    );
+  }
+  revalidatePath(`/projects/${projectId}/agency/deliverables/${deliverableId}`);
+  redirect(
+    `/projects/${projectId}/agency/deliverables/${deliverableId}?saved=1`
+  );
+}
+
+export async function restoreVersionAction(
+  projectId: string,
+  deliverableId: string,
+  versionId: string
+): Promise<void> {
+  const { supabase, userId } = await loadUserOr401();
+  const res = await restoreDeliverableVersion(supabase, {
+    userId,
+    deliverableId,
+    versionId,
+  });
+  if ("error" in res) {
+    redirect(
+      `/projects/${projectId}/agency/deliverables/${deliverableId}?error=${encodeURIComponent(res.error)}`
+    );
+  }
   revalidatePath(`/projects/${projectId}/agency/deliverables/${deliverableId}`);
   redirect(
     `/projects/${projectId}/agency/deliverables/${deliverableId}?saved=1`

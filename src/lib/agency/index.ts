@@ -32,3 +32,14 @@ export {
   applyDeliverableToMemory,
   cleanDeliverableForMemory,
 } from "./memory-apply";
+export {
+  updateDeliverableVersioned,
+  listDeliverableVersions,
+  restoreDeliverableVersion,
+  archivePreviousDeliverable,
+  markStepDeliverableValidated,
+} from "./deliverable-versions";
+export type {
+  DeliverableVersionRow,
+  VersionSource,
+} from "./deliverable-versions";
