@@ -7,6 +7,7 @@ import {
   saveOnboardingAction,
   ingestOnboardingAction,
 } from "./actions";
+import { uploadDocumentsAction } from "../documents/actions";
 import SubmitButton from "../../briefs/[bid]/submit-button";
 
 interface OnboardingData {
@@ -37,6 +38,7 @@ export default async function OnboardingPage({
     error?: string;
     just_created?: string;
     ready_to_ingest?: string;
+    docs_ok?: string;
   }>;
 }) {
   const { id } = await params;
@@ -66,6 +68,7 @@ export default async function OnboardingPage({
   });
   const save = saveOnboardingAction.bind(null, id);
   const ingest = ingestOnboardingAction.bind(null, id);
+  const uploadDocs = uploadDocumentsAction.bind(null, id);
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-6 py-12">
@@ -128,6 +131,117 @@ export default async function OnboardingPage({
         </section>
       )}
       {sp.error && <Banner kind="error">{decodeURIComponent(sp.error)}</Banner>}
+      {sp.docs_ok && (
+        <Banner kind="success">{decodeURIComponent(sp.docs_ok)}</Banner>
+      )}
+
+      {/* ── 📎 Documents transmis par le client (upload direct) ─────────── */}
+      {/* Section AUTONOME (hors du form principal — les forms HTML ne
+          peuvent pas s'imbriquer). */}
+      <section className="mt-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+          📎 Documents transmis par le client
+        </h2>
+        <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+          PDF / DOCX / TXT — texte extrait automatiquement et injecté dans le
+          contexte de tous les agents. Images également conservées (pas
+          d&apos;extraction). Coche « cœur » pour les documents fondateurs
+          (ICP, brief client) : ils sont injectés EN ENTIER.
+        </p>
+
+        {/* Upload direct */}
+        <form
+          action={uploadDocs}
+          className="mt-4 flex flex-col gap-3"
+          encType="multipart/form-data"
+        >
+          <input type="hidden" name="return_to" value="onboarding" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                Catégorie
+              </span>
+              <select
+                name="category"
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+              >
+                <option value="">— libre —</option>
+                <option value="icp">🎯 Document ICP</option>
+                <option value="fiche-produit">📄 Fiche produit</option>
+                <option value="plaquette">📑 Plaquette commerciale</option>
+                <option value="old-ad">🎬 Ancienne ad</option>
+                <option value="transcript">🎙️ Transcript / call</option>
+                <option value="screenshot-lp">🖼️ Screenshot LP</option>
+                <option value="autre">📎 Autre</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                Description (contexte)
+              </span>
+              <input
+                name="description"
+                placeholder="Ex : ICP V2 reçu du client le 12 juin"
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+              Fichier(s) *
+            </span>
+            <input
+              type="file"
+              name="files"
+              multiple
+              required
+              className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-background)] px-3 py-4 text-sm file:mr-3 file:rounded file:border-0 file:bg-[var(--color-primary)] file:px-3 file:py-1 file:text-xs file:font-medium file:text-[var(--color-primary-foreground)]"
+            />
+          </label>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className="flex cursor-pointer items-center gap-2 text-xs">
+              <input type="checkbox" name="is_core" className="h-4 w-4" />
+              <span>
+                ⭐ Document <strong>cœur</strong> (ICP, brief client) — injecté
+                EN ENTIER chez les agents
+              </span>
+            </label>
+            <SubmitButton pendingLabel="Upload + extraction…">
+              📤 Uploader
+            </SubmitButton>
+          </div>
+        </form>
+
+        {/* Documents déjà uploadés */}
+        {docs.length > 0 && (
+          <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+            <div className="flex flex-wrap gap-1.5">
+              {docs.map((d) => (
+                <span
+                  key={d.id}
+                  className={`rounded-md border px-2 py-1 text-[11px] ${
+                    d.is_active
+                      ? "border-[var(--color-border)] bg-[var(--color-background)]"
+                      : "border-[var(--color-border)] bg-[var(--color-background)] opacity-50"
+                  }`}
+                  title={d.description ?? ""}
+                >
+                  {d.is_core ? "⭐" : d.is_active ? "🟢" : "🔕"} {d.file_name}{" "}
+                  <span className="text-[var(--color-muted-foreground)]">
+                    · {d.category ?? "—"}
+                  </span>
+                </span>
+              ))}
+              <Link
+                href={`/projects/${id}/agency/documents`}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-1 text-[11px] hover:bg-[var(--color-accent)]"
+              >
+                gérer (cœur, désactiver, supprimer) →
+              </Link>
+            </div>
+          </div>
+        )}
+      </section>
 
       <form action={save} className="mt-8 flex flex-col gap-6">
         <Section
@@ -316,40 +430,6 @@ export default async function OnboardingPage({
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
             />
           </Field>
-        </Section>
-
-        <Section title="📎 Documents transmis par le client">
-          <div className="sm:col-span-2 -mt-1 mb-3 text-xs text-[var(--color-muted-foreground)]">
-            PDF / DOCX / TXT — texte extrait automatiquement et injecté dans
-            le contexte de tous les agents. Images également conservées (pas
-            d&apos;extraction).
-          </div>
-          {docs.length > 0 && (
-            <div className="sm:col-span-2 flex flex-wrap gap-1.5">
-              {docs.map((d) => (
-                <span
-                  key={d.id}
-                  className={`rounded-md border px-2 py-1 text-[11px] ${
-                    d.is_active
-                      ? "border-[var(--color-border)] bg-[var(--color-background)]"
-                      : "border-[var(--color-border)] bg-[var(--color-background)] opacity-50"
-                  }`}
-                  title={d.description ?? ""}
-                >
-                  {d.is_active ? "🟢" : "🔕"} {d.file_name}{" "}
-                  <span className="text-[var(--color-muted-foreground)]">
-                    · {d.category ?? "—"}
-                  </span>
-                </span>
-              ))}
-              <Link
-                href={`/projects/${id}/agency/documents`}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-1 text-[11px] hover:bg-[var(--color-accent)]"
-              >
-                gérer →
-              </Link>
-            </div>
-          )}
         </Section>
 
         <Section title="Sources d'ingestion">

@@ -25,16 +25,27 @@ export async function uploadDocumentsAction(
   const { supabase, userId } = await loadUserOr401();
   const description = String(formData.get("description") ?? "").trim() || undefined;
   const category = String(formData.get("category") ?? "").trim() || undefined;
+  const isCore = String(formData.get("is_core") ?? "") === "on";
   const files = formData.getAll("files").filter((f): f is File => f instanceof File);
+
+  // L'upload peut venir de la page documents OU de l'onboarding —
+  // on redirige vers la page d'origine (whitelistée).
+  const returnTo =
+    String(formData.get("return_to") ?? "") === "onboarding"
+      ? `/projects/${projectId}/agency/onboarding`
+      : `/projects/${projectId}/agency/documents`;
+  const errParam = returnTo.includes("onboarding") ? "error" : "error";
+  const okParam = returnTo.includes("onboarding") ? "docs_ok" : "ok";
 
   if (files.length === 0) {
     redirect(
-      `/projects/${projectId}/agency/documents?error=${encodeURIComponent("Aucun fichier sélectionné")}`
+      `${returnTo}?${errParam}=${encodeURIComponent("Aucun fichier sélectionné")}`
     );
   }
 
   const errors: string[] = [];
   let ok = 0;
+  const uploadedIds: string[] = [];
   for (const f of files) {
     if (!f || f.size === 0) continue;
     const res = await uploadDocument(supabase, {
@@ -45,20 +56,36 @@ export async function uploadDocumentsAction(
       category,
     });
     if ("error" in res) errors.push(`${f.name} : ${res.error}`);
-    else ok++;
+    else {
+      ok++;
+      uploadedIds.push(res.id);
+    }
+  }
+
+  // P0.7 : flag cœur appliqué à tous les fichiers de cet upload
+  if (isCore && uploadedIds.length > 0) {
+    for (const docId of uploadedIds) {
+      await updateDocumentMeta(supabase, {
+        userId,
+        id: docId,
+        isCore: true,
+      });
+    }
   }
 
   revalidatePath(`/projects/${projectId}/agency/documents`);
   revalidatePath(`/projects/${projectId}/agency/onboarding`);
   if (errors.length > 0) {
     redirect(
-      `/projects/${projectId}/agency/documents?error=${encodeURIComponent(
+      `${returnTo}?${errParam}=${encodeURIComponent(
         `${ok} ok · ${errors.length} erreur(s) : ${errors.join(" ; ")}`
       )}`
     );
   }
   redirect(
-    `/projects/${projectId}/agency/documents?ok=${encodeURIComponent(`${ok} document(s) uploadé(s)`)}`
+    `${returnTo}?${okParam}=${encodeURIComponent(
+      `${ok} document(s) uploadé(s)${isCore ? " (marqués cœur — injectés en entier)" : ""}`
+    )}`
   );
 }
 
